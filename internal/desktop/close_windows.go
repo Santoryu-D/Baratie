@@ -4,6 +4,7 @@ package desktop
 
 import (
 	"strings"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -18,7 +19,9 @@ const processCommandLineInformation = 60
 // un Chrome ouvert par ailleurs n'est jamais touché. Sans ça, la fenêtre
 // survivait parfois à D3X, en rectangle blanc ou gris impossible à fermer
 // (retours de V3x0r et de CoprinusComatus, 20/10/26). Rend le nombre de
-// processus arrêtés.
+// processus arrêtés, une fois qu'ils sont vraiment partis (3 s au plus) : une
+// fenêtre rouverte aussitôt sur le même profil se raccrochait sinon au
+// navigateur mourant et restait vide (Luci, 21/10/26).
 func CloseWindow(profileDir string) int {
 	want := strings.ToLower(profileDir)
 	if want == "" {
@@ -31,7 +34,12 @@ func CloseWindow(profileDir string) int {
 	defer windows.CloseHandle(snap)
 	var e windows.ProcessEntry32
 	e.Size = uint32(unsafe.Sizeof(e))
-	n := 0
+	var stopped []windows.Handle
+	defer func() {
+		for _, h := range stopped {
+			_ = windows.CloseHandle(h)
+		}
+	}()
 	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
 		name := strings.ToLower(windows.UTF16ToString(e.ExeFile[:]))
 		if name != "msedge.exe" && name != "chrome.exe" {
@@ -45,16 +53,25 @@ func CloseWindow(profileDir string) int {
 		if !strings.Contains(cmd, "--user-data-dir") || !strings.Contains(cmd, want) {
 			continue
 		}
-		h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, e.ProcessID)
+		h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, e.ProcessID)
 		if err != nil {
 			continue
 		}
-		if windows.TerminateProcess(h, 0) == nil {
-			n++
+		if windows.TerminateProcess(h, 0) != nil {
+			_ = windows.CloseHandle(h)
+			continue
 		}
-		_ = windows.CloseHandle(h)
+		stopped = append(stopped, h)
 	}
-	return n
+	deadline := time.Now().Add(3 * time.Second)
+	for _, h := range stopped {
+		left := time.Until(deadline)
+		if left <= 0 {
+			break
+		}
+		_, _ = windows.WaitForSingleObject(h, uint32(left/time.Millisecond))
+	}
+	return len(stopped)
 }
 
 // commandLine lit la ligne de commande d'un processus.

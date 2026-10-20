@@ -45,6 +45,9 @@ func (s *Server) PageGone() bool {
 	return now-last > int64(3*time.Minute)
 }
 
+// PageSeen dit si la page a déjà appelé D3X depuis son lancement.
+func (s *Server) PageSeen() bool { return s.lastSeen.Load() != 0 }
+
 // PageClosed : la page a dit au revoir (fenêtre fermée) et rien n'est revenu
 // depuis 8 s. Contrairement au simple silence (veille de l'ordinateur), c'est
 // sûr : ce qui reste de la fenêtre est un fantôme qu'on peut fermer.

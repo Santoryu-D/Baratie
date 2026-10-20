@@ -42,6 +42,10 @@ var signingKey []byte
 
 const defaultPort = 8733
 
+// windowCheck : délai laissé à la page pour se manifester avant que D3X tienne
+// sa fenêtre pour vide (un navigateur lancé à froid met quelques secondes).
+const windowCheck = 15 * time.Second
+
 // Variable passée à D3X relancé après une mise à jour : « port:jeton ». Il
 // reprend la même adresse et la même session, la page ouverte se reconnecte.
 const takeoverEnv = "D3X_TAKEOVER"
@@ -206,13 +210,17 @@ func run(port int, window bool) error {
 	// travail, il reste dans la zone de notification et s'arrête une fois fini.
 	// (Surveiller le processus du navigateur ne marche pas : Edge passe la
 	// fenêtre à un autre de ses processus et rend la main tout de suite.)
-	showWindow := func() {
-		if desktop.OpenWindow(url, profileDir()) == nil {
-			if !desktop.HasTray {
-				fmt.Println("Ouvre ce lien dans ton navigateur :", url)
-			}
-			_ = desktop.OpenDefault(url)
+	// showWindow dit si la page est partie dans la fenêtre d'application (et
+	// non dans le navigateur par défaut).
+	showWindow := func() bool {
+		if desktop.OpenWindow(url, profileDir()) != nil {
+			return true
 		}
+		if !desktop.HasTray {
+			fmt.Println("Ouvre ce lien dans ton navigateur :", url)
+		}
+		_ = desktop.OpenDefault(url)
+		return false
 	}
 	// Lancement avec Windows : l'entrée suit l'exécutable s'il a changé de place.
 	if desktop.HasAutostart && desktop.Autostart() {
@@ -273,6 +281,18 @@ func run(port int, window bool) error {
 	if takeover == "" && window {
 		go func() {
 			time.Sleep(300 * time.Millisecond)
+			if !showWindow() || !desktop.HasTray {
+				return
+			}
+			// Fenêtre restée vide : la page n'a jamais appelé D3X. On la ferme et
+			// on en rouvre une, une seule fois (Luci, 21/10/26 : il fallait lancer
+			// D3X deux fois).
+			time.Sleep(windowCheck)
+			if srv.PageSeen() {
+				return
+			}
+			log.Println("fenêtre restée vide, réouverture")
+			desktop.CloseWindow(profileDir())
 			showWindow()
 		}()
 	} else if !window {
@@ -280,7 +300,7 @@ func run(port int, window bool) error {
 	}
 
 	if desktop.HasTray {
-		desktop.Tray(func() {}, showWindow, func() {
+		desktop.Tray(func() {}, func() { showWindow() }, func() {
 			if srv.Busy() {
 				desktop.MessageBox("D3X", "D3X termine d'abord ce qu'il a en cours (ajouts, vérifications ou publication), puis s'arrêtera.")
 				go func() {
