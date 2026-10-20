@@ -139,9 +139,15 @@ func (d *deluge) call(ctx context.Context, method string, params []interface{}, 
 	return err
 }
 
+// Deluge 2 : daemon.get_version ; Deluge 1.3 : daemon.info. Le test de
+// connexion échouait sur « Unknown method » avec Deluge 2.1.1 (retour
+// CoprinusComatus, 20/10/26).
 func (d *deluge) Version(ctx context.Context) (string, error) {
 	var v string
-	err := d.call(ctx, "daemon.info", nil, &v)
+	err := d.call(ctx, "daemon.get_version", nil, &v)
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unknown method") {
+		err = d.call(ctx, "daemon.info", nil, &v)
+	}
 	return v, err
 }
 

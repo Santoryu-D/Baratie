@@ -163,8 +163,10 @@ func TestDeluge(t *testing.T) {
 		case "web.connect":
 			connected = true
 			reply(nil, "")
+		case "daemon.get_version":
+			reply("2.1.1", "") // Deluge 2 : daemon.info n'existe plus
 		case "daemon.info":
-			reply("2.1.1", "")
+			reply(nil, "Unknown method")
 		case "core.get_torrents_status":
 			reply(map[string]interface{}{hash: map[string]interface{}{"name": "Release.Test", "save_path": "/dl", "total_size": 1000, "total_wanted": 1000,
 				"progress": 100.0, "state": "Paused", "trackers": []map[string]string{{"url": "https://autre.invalid/a"}},
