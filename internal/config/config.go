@@ -39,6 +39,9 @@ type Config struct {
 	// Catégorie et étiquette posées sur les torrents ajoutés par D3X.
 	Category string `json:"category"`
 	Tag      string `json:"tag"`
+	// Catégorie des releases publiées avec D3X (Publier, Lot), si elle doit
+	// différer de celle des cross-seeds (demande d'Ekhstaz). Vide = Category.
+	PubCategory string `json:"pubCategory,omitempty"`
 
 	// Vérifier au lancement qu'une nouvelle version existe (GitHub).
 	CheckUpdates bool `json:"checkUpdates"`

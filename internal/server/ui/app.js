@@ -47,6 +47,8 @@ const ui = {
   picked: new Set(), // « Pas sur V3X » : releases choisies pour Publier ou Lot
   reqs: {}, // demandes ouvertes de V3X par ligne « Pas sur V3X »
   reqVersion: -1,
+  pols: {}, // team au réupload interdit ou sur accord, par ligne « Pas sur V3X »
+  polVersion: -1,
   relays: {}, // relais ouverts sur V3X, par info hash
   relayPrime: 0,
   relVersion: -1,
@@ -361,6 +363,7 @@ function fillSettings() {
   $("#detected").classList.add("hidden");
   renderClients();
   $("#f-cat").value = s.category || "";
+  $("#f-pubcat").value = s.pubCategory || "";
   $("#f-tag").value = s.tag || "";
   $("#f-updates").checked = !!s.checkUpdates;
   $("#f-theme").value = (s.appearance && s.appearance.uiTheme) || "";
@@ -741,6 +744,7 @@ async function saveSettings(ev) {
       v3xKey: $("#f-key").value,
       clients: edit.clients.map(clientPayload),
       category: $("#f-cat").value,
+      pubCategory: $("#f-pubcat").value,
       tag: $("#f-tag").value,
       checkUpdates: $("#f-updates").checked,
       uiTheme: $("#f-theme").value,
@@ -878,6 +882,7 @@ async function loadRows() {
     for (const k of ui.picked) if (!picks.has(k)) ui.picked.delete(k);
     renderRows();
     if (ui.reqVersion !== ui.version && ui.rows.some((x) => x.status === "none")) loadRequests();
+    if (ui.polVersion !== ui.version && ui.rows.some((x) => x.status === "none")) loadPolicies();
     if (ui.relVersion !== ui.version && ui.rows.some((x) => x.status === "add")) loadRelays();
   } catch (e) {
     if (e.message !== "session") toast(e.message, "bad");
@@ -925,6 +930,25 @@ async function loadRequests() {
   } catch (e) {
     ui.reqs = {};
   }
+}
+
+// Teams qui interdisent le réupload ou le soumettent à leur accord (demande
+// d'Ekhstaz) : pastille sur la ligne, et case pour masquer les interdites.
+async function loadPolicies() {
+  const v = ui.version;
+  ui.polVersion = v;
+  try {
+    const r = await api("/ui/teams/policies");
+    if (ui.version !== v) return;
+    ui.pols = r.byKey || {};
+    renderRows();
+  } catch (e) {
+    ui.pols = {};
+  }
+}
+
+function hideForbidden() {
+  try { return localStorage.getItem("d3x-hide-forbidden") === "1"; } catch (e) { return false; }
 }
 
 // Relais ouverts (releases rares lâchées, prime au repreneur).
@@ -1086,7 +1110,17 @@ function renderRows() {
   }
   const tab = TABS.find((t) => t.id === ui.tab) || TABS[0];
   let list = ui.rows.filter((r) => tabOfRow(r).id === tab.id);
-  // Pas sur V3X : celles qu'un membre demande d'abord, les mieux primées en tête.
+  // Pas sur V3X : les releases d'une team qui interdit le réupload, masquées
+  // sur demande ; puis celles qu'un membre demande d'abord, les mieux primées en tête.
+  const forbidden = tab.id === "none" ? list.filter((r) => ui.pols[r.key] && ui.pols[r.key].policy === "forbidden").length : 0;
+  const filterBox = $("#none-filter");
+  filterBox.classList.toggle("hidden", !forbidden);
+  if (forbidden) {
+    const cb = $("#f-hide-forbidden");
+    cb.checked = hideForbidden();
+    filterBox.lastChild.textContent = " Masquer les " + forbidden + " " + plural(forbidden, "release d'une team qui interdit", "releases de teams qui interdisent") + " le réupload";
+    if (cb.checked) list = list.filter((r) => !(ui.pols[r.key] && ui.pols[r.key].policy === "forbidden"));
+  }
   if (tab.id === "none") {
     const best = (r) => Math.max(-1, ...(ui.reqs[r.key] || []).filter((h) => !h.mine).map((h) => h.reward || 0));
     list = list.map((r, i) => [r, best(r), i]).sort((a, b) => b[1] - a[1] || a[2] - b[2]).map((x) => x[0]);
@@ -1187,6 +1221,17 @@ function rowEl(r) {
     const reqs = el("div", "reqs");
     reqs.append(...requestBadges(ui.reqs[r.key]));
     if (reqs.children.length) tdN.append(reqs);
+  }
+  if (r.status === "none" && ui.pols[r.key]) {
+    const p = ui.pols[r.key];
+    const forbid = p.policy === "forbidden";
+    const b = el("span", "pill " + (forbid ? "bad" : "warn"), (forbid ? "Réupload interdit" : "Réupload sur accord") + " · " + p.team);
+    b.title = forbid
+      ? "La team " + p.team + " n'autorise pas le réupload de ses releases : V3X refusera la publication."
+      : "La team " + p.team + " demande son accord avant un réupload : écris-lui sur V3X avant de publier.";
+    const box = el("div", "reqs");
+    box.append(b);
+    tdN.append(box);
   }
   tr.append(tdN);
 
@@ -1414,6 +1459,10 @@ async function boot() {
       if (ev.target.checked) setOf(r).add(r.key);
       else setOf(r).delete(r.key);
     }
+    renderRows();
+  });
+  $("#f-hide-forbidden").addEventListener("change", (ev) => {
+    try { localStorage.setItem("d3x-hide-forbidden", ev.target.checked ? "1" : "0"); } catch (e) { /* rien */ }
     renderRows();
   });
   $("#scan").addEventListener("click", async () => {

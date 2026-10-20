@@ -79,6 +79,7 @@ type Server struct {
 	mb    *musicbrainz.Client // recherche des albums
 	seedC seedCache           // état du seed lu sur V3X
 	reqC  requestsCache       // demandes ouvertes
+	polC  policiesCache       // teams dont le réupload n'est pas libre
 	sv    survey              // surveillance du client
 
 	pubKey      ed25519.PublicKey // clé qui signe les versions de D3X
@@ -299,6 +300,7 @@ type stateOut struct {
 	// dans le client).
 	Clients      []clientOut `json:"clients"`
 	Category     string      `json:"category"`
+	PubCategory  string      `json:"pubCategory"`
 	Tag          string      `json:"tag"`
 	CheckUpdates bool        `json:"checkUpdates"`
 	LastDir      string      `json:"lastDir,omitempty"`
@@ -346,6 +348,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	}
 	o.Clients = s.clientsOut()
 	o.Category, o.Tag, o.CheckUpdates = s.cfg.Category, s.cfg.Tag, s.cfg.CheckUpdates
+	o.PubCategory = s.cfg.PubCategory
 	o.LastDir = s.cfg.LastDir
 	o.Watch = s.surveyState(s.cfg.Watch)
 	o.Links.On = s.cfg.Links.On
@@ -385,6 +388,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		V3XKey       string `json:"v3xKey"`
 		Category     string `json:"category"`
+		PubCategory  string `json:"pubCategory"`
 		Tag          string `json:"tag"`
 		CheckUpdates bool   `json:"checkUpdates"`
 		UITheme      string `json:"uiTheme"`
@@ -429,6 +433,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		c.Clients = list
 	}
 	c.Category = strings.TrimSpace(in.Category)
+	c.PubCategory = strings.TrimSpace(in.PubCategory)
 	c.Tag = strings.TrimSpace(in.Tag)
 	c.CheckUpdates = in.CheckUpdates
 	c.UITheme, c.UIAccent = "", ""

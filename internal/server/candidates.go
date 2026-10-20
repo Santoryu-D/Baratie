@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -26,9 +27,17 @@ type requestsCache struct {
 	list []v3x.Request
 }
 
+// policiesCache : teams dont le réupload n'est pas libre (30 min).
+type policiesCache struct {
+	mu   sync.Mutex
+	at   time.Time
+	list []v3x.TeamPolicy
+}
+
 func (s *Server) routesCandidates() {
 	s.mux.HandleFunc("POST /ui/rows/local", s.rowsLocal)
 	s.mux.HandleFunc("GET /ui/requests/match", s.requestsMatch)
+	s.mux.HandleFunc("GET /ui/teams/policies", s.teamPoliciesMatch)
 	s.mux.HandleFunc("POST /ui/batch/entries", s.batchEntries)
 	s.mux.HandleFunc("POST /ui/requests/propose", s.requestsPropose)
 	s.mux.HandleFunc("GET /ui/requests/for", s.requestsFor)
@@ -261,4 +270,88 @@ func (s *Server) batchEntries(w http.ResponseWriter, r *http.Request) {
 		out = append(out, be)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"path": "", "entries": out})
+}
+
+func (s *Server) teamPolicies(ctx context.Context, v *v3x.Client) ([]v3x.TeamPolicy, error) {
+	s.polC.mu.Lock()
+	defer s.polC.mu.Unlock()
+	if s.polC.list != nil && time.Since(s.polC.at) < 30*time.Minute {
+		return s.polC.list, nil
+	}
+	list, err := v.TeamPolicies(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.polC.list, s.polC.at = list, time.Now()
+	return list, nil
+}
+
+type policyHit struct {
+	Team   string `json:"team"`
+	Policy string `json:"policy"` // forbidden, ask
+}
+
+// teamPoliciesMatch : pour chaque release « Pas sur V3X », la team de son tag
+// de groupe quand elle interdit le réupload ou le soumet à son accord, et que
+// le membre n'en fait pas partie (demande d'Ekhstaz, 21/10/26).
+func (s *Server) teamPoliciesMatch(w http.ResponseWriter, r *http.Request) {
+	v, err := s.v3xClient()
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	list, err := s.teamPolicies(ctx, v)
+	if err != nil {
+		apiFail(w, err)
+		return
+	}
+	byTag := map[string]policyHit{}
+	for _, t := range list {
+		if t.Allowed {
+			continue
+		}
+		for _, tag := range t.Tags {
+			byTag[strings.ToLower(tag)] = policyHit{Team: t.Name, Policy: t.Policy}
+		}
+	}
+	out := map[string]policyHit{}
+	for _, row := range s.engine.Rows() {
+		if row.Status != crossseed.StNone {
+			continue
+		}
+		if g := releaseGroup(row.Name); g != "" {
+			if h, ok := byTag[strings.ToLower(g)]; ok {
+				out[row.Key] = h
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"byKey": out})
+}
+
+var (
+	trailingTitle = regexp.MustCompile(`\s*\([^()]*\)\s*$`)
+	groupToken    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_]{1,19}$`)
+	notAGroup     = regexp.MustCompile(`^(?i:\d+p?|raws|subs|dl|web|hdtv|x264|x265|h264|h265|hevc|avc|aac|ac3|dts|multi|french|vff|vfq|vostfr)$`)
+)
+
+// releaseGroup : le tag de groupe en fin de nom (« …x265-TEAM »), comme le site
+// (lib/release-quality.ts) ; vide s'il n'y en a pas.
+func releaseGroup(name string) string {
+	n := trailingTitle.ReplaceAllString(name, "")
+	for _, ext := range []string{".mkv", ".mp4", ".avi", ".torrent"} {
+		if strings.HasSuffix(strings.ToLower(n), ext) {
+			n = n[:len(n)-len(ext)]
+		}
+	}
+	i := strings.LastIndex(n, "-")
+	if i < 0 || i == len(n)-1 {
+		return ""
+	}
+	tail := strings.TrimSpace(n[i+1:])
+	if !groupToken.MatchString(tail) || notAGroup.MatchString(tail) {
+		return ""
+	}
+	return tail
 }

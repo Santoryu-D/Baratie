@@ -75,6 +75,7 @@
     <div class="notice warn hidden" id="scan-warn"></div>
 
     <div class="tabs hidden" id="tabs" role="tablist"></div>
+    <label class="check small hidden" id="none-filter"><input type="checkbox" id="f-hide-forbidden"> Masquer les releases des teams qui interdisent le réupload</label>
 
     <div class="table-wrap hidden" id="table-wrap">
       <table class="rows">
@@ -495,6 +496,9 @@
         <div><label for="f-tag">Étiquette</label><input id="f-tag" type="text" autocomplete="off"></div>
       </div>
       <p class="hint">Posées sur chaque torrent ajouté par D3X, pour les retrouver dans ton client.</p>
+      <label for="f-pubcat">Catégorie de tes publications</label>
+      <input id="f-pubcat" type="text" autocomplete="off" placeholder="la même">
+      <p class="hint">Pour ranger à part ce que tu publies avec Publier et le Lot. Vide : la catégorie ci-dessus.</p>
       <label class="check"><input id="f-updates" type="checkbox"> Prévenir quand une nouvelle version de D3X sort</label>
     </fieldset>
     <div class="dialog-actions">

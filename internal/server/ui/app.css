@@ -464,6 +464,8 @@ tr.risk-warn td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 .span2 { grid-column: 1 / -1; }
 .opts { display: flex; gap: 18px; flex-wrap: wrap; }
 label.check.inline { margin-top: 0; display: inline-flex; align-items: center; font-weight: 400; }
+/* Filtre de « Pas sur V3X » : teams qui interdisent le réupload. */
+label.check.small { margin: 0 0 10px; align-items: center; font-size: 13px; color: var(--muted); }
 .tokens { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .tok { font-size: 12px; background: var(--sunk); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
 .tok.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }

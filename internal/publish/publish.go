@@ -474,7 +474,7 @@ func (m *Manager) Publish(id string, fields map[string]string) error {
 			if t := env.Get(clientID); t == nil {
 				err = env.Unreachable(clientID)
 			} else {
-				_, err = m.engine.AddAndVerify(ctx, *t, env.Cfg, "pub:"+id, up.ID, torrentRaw, clientDir)
+				_, err = m.engine.AddAndVerify(ctx, *t, pubConfig(env.Cfg), "pub:"+id, up.ID, torrentRaw, clientDir)
 			}
 			if errors.Is(err, crossseed.ErrInClient) {
 				err = nil
@@ -517,4 +517,15 @@ func private(src source.Source, where string) error {
 		}
 	}
 	return nil
+}
+
+// pubConfig : la release publiée part dans la catégorie des publications si
+// elle est réglée (demande d'Ekhstaz), sinon dans celle des cross-seeds.
+func pubConfig(cfg *config.Config) *config.Config {
+	if cfg == nil || strings.TrimSpace(cfg.PubCategory) == "" {
+		return cfg
+	}
+	c := *cfg
+	c.Category = strings.TrimSpace(cfg.PubCategory)
+	return &c
 }

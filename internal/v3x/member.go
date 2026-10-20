@@ -124,3 +124,23 @@ func (c *Client) MatchFiles(ctx context.Context, r *Retry, sizes []int64) (map[i
 	}
 	return res, nil
 }
+
+// TeamPolicy : une team dont le réupload est interdit (« forbidden ») ou soumis
+// à son accord (« ask »). Allowed : le membre en fait partie ou a leur accord.
+type TeamPolicy struct {
+	Name    string   `json:"name"`
+	Tags    []string `json:"tags"`
+	Policy  string   `json:"policy"`
+	Allowed bool     `json:"allowed"`
+}
+
+// TeamPolicies liste les teams dont le réupload n'est pas libre.
+func (c *Client) TeamPolicies(ctx context.Context) ([]TeamPolicy, error) {
+	var out struct {
+		Teams []TeamPolicy `json:"teams"`
+	}
+	if err := c.doJSON(ctx, &Retry{}, http.MethodGet, "/api/d3x/team-policies", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Teams, nil
+}
