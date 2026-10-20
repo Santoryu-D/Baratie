@@ -1,0 +1,259 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/V3x0rV3x/D3X/internal/crossseed"
+	"github.com/V3x0rV3x/D3X/internal/journal"
+	"github.com/V3x0rV3x/D3X/internal/names"
+	"github.com/V3x0rV3x/D3X/internal/pathmap"
+	"github.com/V3x0rV3x/D3X/internal/source"
+	"github.com/V3x0rV3x/D3X/internal/v3x"
+)
+
+// « Pas sur V3X » : ce que tu seedes ailleurs et qui manque sur V3X. Chaque
+// release se publie d'un clic ou passe en lot, et celles qui répondent à une
+// demande ouverte sont signalées avec leur prime.
+
+type requestsCache struct {
+	mu   sync.Mutex
+	at   time.Time
+	list []v3x.Request
+}
+
+func (s *Server) routesCandidates() {
+	s.mux.HandleFunc("POST /ui/rows/local", s.rowsLocal)
+	s.mux.HandleFunc("GET /ui/requests/match", s.requestsMatch)
+	s.mux.HandleFunc("POST /ui/batch/entries", s.batchEntries)
+	s.mux.HandleFunc("POST /ui/requests/propose", s.requestsPropose)
+	s.mux.HandleFunc("GET /ui/requests/for", s.requestsFor)
+}
+
+// requestsFor : les demandes ouvertes auxquelles répond un nom de release
+// (après une publication, pour la proposer).
+func (s *Server) requestsFor(w http.ResponseWriter, r *http.Request) {
+	v, err := s.v3xClient()
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	reqs, err := s.requests(ctx, v)
+	if err != nil {
+		apiFail(w, err)
+		return
+	}
+	hits := matchRequest(r.URL.Query().Get("name"), reqs)
+	if hits == nil {
+		hits = []requestHit{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"requests": hits})
+}
+
+// requestsPropose : propose une release qu'on vient de publier pour une
+// demande. Le demandeur la valide sur le site.
+func (s *Server) requestsPropose(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		RequestID string `json:"requestId"`
+		TorrentID string `json:"torrentId"`
+	}
+	if !decode(w, r, 1<<12, &in) {
+		return
+	}
+	v, err := s.v3xClient()
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := v.Propose(ctx, in.RequestID, in.TorrentID); err != nil {
+		apiFail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// requests : les demandes ouvertes, relues toutes les 30 minutes.
+func (s *Server) requests(ctx context.Context, v *v3x.Client) ([]v3x.Request, error) {
+	s.reqC.mu.Lock()
+	defer s.reqC.mu.Unlock()
+	if s.reqC.list != nil && time.Since(s.reqC.at) < 30*time.Minute {
+		return s.reqC.list, nil
+	}
+	list, err := v.Requests(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.reqC.list, s.reqC.at = list, time.Now()
+	return list, nil
+}
+
+type requestHit struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Year   string `json:"year,omitempty"`
+	Reward int    `json:"reward"`
+	Mine   bool   `json:"mine,omitempty"`
+}
+
+// matchRequest : les demandes auxquelles une release répond (même titre, même
+// année quand les deux la donnent, même type quand la demande le dit).
+func matchRequest(name string, reqs []v3x.Request) []requestHit {
+	rel := names.Parse(name)
+	if rel.Title == "" {
+		return nil
+	}
+	relS, relE := names.Episode(name)
+	var out []requestHit
+	for _, q := range reqs {
+		title, ty := names.RequestTitle(q.Title)
+		year := q.Year
+		if year == "" {
+			year = ty
+		}
+		sim := names.Similarity(title, rel.Title)
+		if sim < 0.85 {
+			continue
+		}
+		if year != "" && rel.Year != "" && year != rel.Year {
+			continue
+		}
+		// Sans année d'un côté : le titre doit être exactement le même.
+		if (year == "") != (rel.Year == "") && sim < 1 {
+			continue
+		}
+		if q.MediaType == "tv" && !rel.TV || q.MediaType == "movie" && rel.TV {
+			continue
+		}
+		// Une autre saison (ou un autre épisode) ne remplit pas la demande.
+		if qs, qe := names.Episode(q.Title); qs >= 0 && relS >= 0 && qs != relS || qe >= 0 && relE >= 0 && qe != relE {
+			continue
+		}
+		out = append(out, requestHit{ID: q.ID, Title: q.Title, Year: year, Reward: q.Reward, Mine: q.Mine})
+	}
+	return out
+}
+
+func (s *Server) requestsMatch(w http.ResponseWriter, r *http.Request) {
+	v, err := s.v3xClient()
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	reqs, err := s.requests(ctx, v)
+	if err != nil {
+		apiFail(w, err)
+		return
+	}
+	out := map[string][]requestHit{}
+	for _, row := range s.engine.Rows() {
+		if row.Status != crossseed.StNone {
+			continue
+		}
+		if hits := matchRequest(row.Name, reqs); len(hits) > 0 {
+			out[row.Key] = hits
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"byKey": out, "open": len(reqs)})
+}
+
+type localPath struct {
+	Path   string `json:"path,omitempty"`
+	Source string `json:"source,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+// resolve : où D3X voit une release du client (ce PC, ou la seedbox quand le
+// client y tourne).
+func (s *Server) resolve(ctx context.Context, clientPath string) localPath {
+	s.mu.Lock()
+	rules := s.cfg.PathMap
+	ssh := s.ssh
+	s.mu.Unlock()
+	local := pathmap.FromClient(clientPath, rules)
+	if (source.Local{}).Exists(ctx, local) {
+		return localPath{Path: local, Source: "local"}
+	}
+	if ssh != nil && strings.HasPrefix(clientPath, "/") {
+		if (source.Remote{C: ssh}).Exists(ctx, clientPath) {
+			return localPath{Path: clientPath, Source: "ssh"}
+		}
+	}
+	dir := clientPath
+	if i := strings.LastIndexAny(strings.TrimRight(dir, `/\`), `/\`); i > 0 {
+		dir = dir[:i]
+	}
+	return localPath{Error: "D3X ne voit pas « " + dir + " » : dis-lui où il voit ce dossier (Réglages ▸ Dossiers du client), ou règle ta seedbox"}
+}
+
+func (s *Server) rowsLocal(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Keys []string `json:"keys"`
+	}
+	if !decode(w, r, 1<<20, &in) {
+		return
+	}
+	want := map[string]bool{}
+	for _, k := range in.Keys {
+		want[k] = true
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	defer cancel()
+	out := map[string]localPath{}
+	for _, row := range s.engine.Rows() {
+		if want[row.Key] && row.Path != "" {
+			out[row.Key] = s.resolve(ctx, row.Path)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// batchEntries : un lot fait de releases choisies (au lieu d'un dossier).
+func (s *Server) batchEntries(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Paths  []string `json:"paths"`
+		Source string   `json:"source"`
+	}
+	if !decode(w, r, 1<<20, &in) {
+		return
+	}
+	if len(in.Paths) == 0 {
+		fail(w, http.StatusBadRequest, errors.New("aucune release choisie"))
+		return
+	}
+	src, err := s.source(in.Source)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	s.mu.Lock()
+	exclude := s.cfg.ExcludeList()
+	s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	list, err := src.Entries(ctx, in.Paths, exclude)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	last := journal.LastByPath()
+	out := make([]batchEntry, 0, len(list))
+	for _, e := range list {
+		be := batchEntry{Entry: e}
+		if ev, ok := last[src.Key(e.Path)]; ok {
+			ev := ev
+			be.Last = &ev
+		}
+		out = append(out, be)
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"path": "", "entries": out})
+}

@@ -1,0 +1,17 @@
+# D3X sur un NAS ou un serveur. Lien d'accès : docker compose logs d3x
+services:
+  d3x:
+    image: ghcr.io/v3x0rv3x/d3x:latest
+    container_name: d3x
+    restart: unless-stopped
+    ports:
+      - "8733:8733"
+    volumes:
+      - d3x:/config
+      # Tes releases, en lecture seule : D3X ne modifie jamais tes fichiers.
+      - /chemin/vers/tes/medias:/data:ro
+    # Utilisateur qui peut lire tes médias (id -u, id -g sur le NAS).
+    # user: "1000:1000"
+
+volumes:
+  d3x:

@@ -1,0 +1,23 @@
+//go:build !windows
+
+package desktop
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+)
+
+// HasTray : hors Windows, D3X garde son terminal (pas d'icône de notification).
+const HasTray = false
+
+// Tray n'existe pas ici : ready est appelé, puis la fonction rend la main.
+func Tray(ready, onOpen, onQuit func()) { ready() }
+
+// QuitTray ne fait rien hors Windows.
+func QuitTray() {}
+
+// MessageBox écrit le message dans le terminal.
+func MessageBox(title, text string) { fmt.Fprintln(os.Stderr, title+" : "+text) }
+
+func hideConsole(*exec.Cmd) {}

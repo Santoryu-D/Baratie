@@ -1,0 +1,14 @@
+# Binaires compilés
+/d3x
+/d3x.exe
+/dist/
+*.exe
+*.test
+*.out
+*.syso
+
+# Agents pour seedbox, produits à la compilation
+internal/remote/agents/*.gz
+
+# Captures du README (sortie de scripts/captures/run.sh)
+scripts/captures/out/

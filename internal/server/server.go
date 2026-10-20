@@ -1,0 +1,630 @@
+// Package server sert la page locale de D3X (http://127.0.0.1 seulement).
+//
+// Protections, parce qu'une page web quelconque ouverte dans le même
+// navigateur peut tenter d'appeler un serveur local :
+//   - écoute sur 127.0.0.1 uniquement ;
+//   - en-tête Host vérifié (127.0.0.1, localhost ou [::1] au bon port) :
+//     bloque le rebond DNS, où un site pointe son propre domaine vers 127.0.0.1 ;
+//   - toute route /ui/ exige le cookie de session, tiré au hasard à chaque
+//     lancement (HttpOnly, SameSite=Strict) ;
+//   - les requêtes POST exigent du JSON et une origine identique.
+package server
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/subtle"
+	"embed"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"net"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/V3x0rV3x/D3X/internal/client"
+	"github.com/V3x0rV3x/D3X/internal/config"
+	"github.com/V3x0rV3x/D3X/internal/crossseed"
+	"github.com/V3x0rV3x/D3X/internal/desktop"
+	"github.com/V3x0rV3x/D3X/internal/journal"
+	"github.com/V3x0rV3x/D3X/internal/musicbrainz"
+	"github.com/V3x0rV3x/D3X/internal/pathmap"
+	"github.com/V3x0rV3x/D3X/internal/publish"
+	"github.com/V3x0rV3x/D3X/internal/remote"
+	"github.com/V3x0rV3x/D3X/internal/v3x"
+)
+
+//go:embed ui
+var uiFS embed.FS
+
+const cookieName = "d3x_session"
+
+// Server est la page locale et son état.
+type Server struct {
+	Version string
+	Token   string
+	Port    int
+	opts    Options
+
+	mu      sync.Mutex
+	cfg     *config.Config
+	q       client.Client
+	v       *v3x.Client
+	me      *v3x.Me
+	qbitVer string
+	qbitErr string
+	v3xErr  string
+	update  *Update
+	engine  *crossseed.Engine
+	pub     *publish.Manager
+	mux     *http.ServeMux
+
+	// Présence de la page : dernière requête de la page, et son « au revoir »
+	// (fermeture de la fenêtre). En nanosecondes Unix.
+	lastSeen atomic.Int64
+	byeAt    atomic.Int64
+
+	ssh     *remote.Client // seedbox connectée (nil sinon)
+	sshSys  string
+	sshErr  string
+	sshPend *sshPending
+
+	mb    *musicbrainz.Client // recherche des albums
+	seedC seedCache           // état du seed lu sur V3X
+	reqC  requestsCache       // demandes ouvertes
+	sv    survey              // surveillance du client
+
+	pubKey      ed25519.PublicKey // clé qui signe les versions de D3X
+	restart     chan struct{}
+	restartOnce sync.Once
+
+	pubCtx   []byte // contexte de publication du membre (gardé 5 min)
+	pubCtxAt time.Time
+	bbCSS    []byte // feuille de style BBCode du site (gardée 1 h)
+	bbCSSAt  time.Time
+}
+
+// NewToken tire un jeton de session.
+func NewToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+// Options : mode serveur (Docker, NAS), où la page est ouverte depuis une
+// autre machine.
+type Options struct {
+	// Remote : page jointe par le réseau (n'importe quel nom d'hôte, derrière
+	// un proxy https compris). Le jeton reste exigé, le cookie dure.
+	Remote bool
+	// Managed : D3X mis à jour par autre chose que lui-même (« docker ») ;
+	// il signale les nouvelles versions sans les installer.
+	Managed string
+}
+
+// New prépare le serveur avec la configuration lue.
+func New(version string, cfg *config.Config, token string, port int) *Server {
+	return NewWith(version, cfg, token, port, Options{})
+}
+
+// NewWith prépare le serveur avec des options.
+func NewWith(version string, cfg *config.Config, token string, port int, opts Options) *Server {
+	s := &Server{Version: version, Token: token, Port: port, opts: opts, cfg: cfg, mux: http.NewServeMux(), restart: make(chan struct{})}
+	s.engine = crossseed.New(s.clients)
+	s.mb = musicbrainz.New(version)
+	s.pub = publish.New(publish.Clients(s.clients), s.engine, version)
+	sub, _ := fs.Sub(uiFS, "ui")
+	s.mux.Handle("GET /", http.FileServer(http.FS(sub)))
+	s.mux.HandleFunc("GET /auth", s.auth)
+	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("D3X")) })
+	s.mux.HandleFunc("GET /ui/state", s.state)
+	s.mux.HandleFunc("POST /ui/settings", s.settings)
+	s.mux.HandleFunc("POST /ui/reconnect", s.reconnect)
+	s.mux.HandleFunc("POST /ui/scan", s.scan)
+	s.mux.HandleFunc("POST /ui/stop", s.stop)
+	s.mux.HandleFunc("GET /ui/status", s.status)
+	s.mux.HandleFunc("GET /ui/rows", s.rows)
+	s.mux.HandleFunc("POST /ui/apply", s.apply)
+	s.mux.HandleFunc("POST /ui/remove", s.remove)
+	s.mux.HandleFunc("GET /ui/history", s.history)
+	s.mux.HandleFunc("GET /ui/fs", s.browse)
+	s.mux.HandleFunc("GET /ui/client/detect", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"found": client.Detect()})
+	})
+	s.routesPublish()
+	s.routesBatch()
+	s.routesSSH()
+	s.routesMusic()
+	s.routesSeed()
+	s.routesCandidates()
+	s.routesLibrary()
+	s.mux.HandleFunc("POST /ui/update/restart", s.restartNow)
+	s.mux.HandleFunc("GET /ui/ping", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	s.mux.HandleFunc("POST /ui/bye", func(w http.ResponseWriter, r *http.Request) {
+		s.byeAt.Store(time.Now().UnixNano())
+		w.WriteHeader(http.StatusNoContent)
+	})
+	go s.connect()
+	go s.connectSSH()
+	go s.updateLoop()
+	go s.surveyLoop()
+	s.engine.SetLinker(s.linkFiles)
+	return s
+}
+
+func (s *Server) hostAllowed(host string) bool {
+	if s.opts.Remote {
+		return host != ""
+	}
+	h, p, err := net.SplitHostPort(host)
+	if err != nil || p != strconv.Itoa(s.Port) {
+		return false
+	}
+	return h == "127.0.0.1" || h == "localhost" || h == "::1"
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.hostAllowed(r.Host) {
+		http.Error(w, "hôte refusé", http.StatusForbidden)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host && o != "https://"+r.Host {
+			http.Error(w, "origine refusée", http.StatusForbidden)
+			return
+		}
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			http.Error(w, "JSON attendu", http.StatusUnsupportedMediaType)
+			return
+		}
+	}
+	if strings.HasPrefix(r.URL.Path, "/ui/") {
+		if !s.sessionOK(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "session"})
+			return
+		}
+		s.lastSeen.Store(time.Now().UnixNano())
+	}
+	h := w.Header()
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Referrer-Policy", "no-referrer")
+	// Aucun script venu d'ailleurs. WebAssembly pour MediaInfo ; images en https
+	// (affiches TMDB, hébergeurs des présentations) ; styles en ligne pour le
+	// rendu BBCode (couleurs, tailles).
+	h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+	// La page change à chaque version : jamais de copie gardée par le navigateur.
+	h.Set("Cache-Control", "no-store")
+	s.mux.ServeHTTP(w, r)
+}
+
+func (s *Server) sessionOK(r *http.Request) bool {
+	c, err := r.Cookie(cookieName)
+	return err == nil && subtle.ConstantTimeCompare([]byte(c.Value), []byte(s.Token)) == 1
+}
+
+// auth échange le jeton du lien d'ouverture contre le cookie de session.
+func (s *Server) auth(w http.ResponseWriter, r *http.Request) {
+	if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("t")), []byte(s.Token)) != 1 {
+		if s.opts.Remote {
+			http.Error(w, "Lien invalide : le bon lien est dans le journal de D3X (docker logs d3x).", http.StatusForbidden)
+		} else {
+			http.Error(w, "Lien périmé : relance D3X pour l'ouvrir.", http.StatusForbidden)
+		}
+		return
+	}
+	c := &http.Cookie{Name: cookieName, Value: s.Token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode}
+	if s.opts.Remote {
+		// Page ouverte d'une autre machine : le lien n'est pas redonné à chaque
+		// fois, le cookie tient 400 jours (https derrière un proxy : Secure).
+		c.MaxAge = 400 * 24 * 3600
+		c.Secure = r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	}
+	http.SetCookie(w, c)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func fail(w http.ResponseWriter, status int, err error) {
+	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// clients fournit au moteur les clients connectés.
+func (s *Server) clients() (client.Client, *v3x.Client, *config.Config, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.v == nil || s.me == nil {
+		return nil, nil, nil, errors.New("D3X n'est pas connecté à V3X : vérifie ta clé API dans les réglages")
+	}
+	if s.q == nil || s.qbitVer == "" {
+		return nil, nil, nil, errors.New("D3X n'est pas connecté à ton client torrent : vérifie les réglages")
+	}
+	c := *s.cfg
+	return s.q, s.v, &c, nil
+}
+
+// connect (re)crée les clients et vérifie les deux connexions.
+func (s *Server) connect() {
+	s.mu.Lock()
+	cfg := *s.cfg
+	s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	var (
+		v       *v3x.Client
+		me      *v3x.Me
+		v3xErr  string
+		q       client.Client
+		qbitVer string
+		qbitErr string
+	)
+	if cfg.V3XKey != "" {
+		v = v3x.New(cfg.V3XBase, cfg.V3XKey, "D3X/"+s.Version)
+		m, err := v.Me(ctx)
+		if err != nil {
+			v3xErr = err.Error()
+		} else {
+			me = m
+		}
+	}
+	if cfg.QbitURL != "" {
+		c, err := client.New(client.Options{Kind: cfg.ClientKind, URL: cfg.QbitURL, User: cfg.QbitUser, Pass: cfg.QbitPass, Insecure: cfg.QbitInsecure})
+		if err != nil {
+			qbitErr = err.Error()
+		} else if ver, err := c.Version(ctx); err != nil {
+			qbitErr = err.Error()
+		} else {
+			q, qbitVer = c, strings.TrimSpace(c.Kind()+" "+ver)
+		}
+	}
+	s.mu.Lock()
+	s.v, s.me, s.v3xErr = v, me, v3xErr
+	s.q, s.qbitVer, s.qbitErr = q, qbitVer, qbitErr
+	s.mu.Unlock()
+}
+
+type stateOut struct {
+	Version string  `json:"version"`
+	Mode    string  `json:"mode,omitempty"` // server (page jointe par le réseau), docker
+	Update  *Update `json:"update,omitempty"`
+	V3X     struct {
+		Configured bool     `json:"configured"`
+		OK         bool     `json:"ok"`
+		Error      string   `json:"error,omitempty"`
+		Username   string   `json:"username,omitempty"`
+		Ratio      *float64 `json:"ratio,omitempty"`
+		HitAndRun  int      `json:"hitAndRun"`
+	} `json:"v3x"`
+	Qbit struct {
+		Kind       string `json:"kind"`
+		Configured bool   `json:"configured"`
+		OK         bool   `json:"ok"`
+		Error      string `json:"error,omitempty"`
+		Version    string `json:"version,omitempty"`
+		URL        string `json:"url,omitempty"`
+		User       string `json:"user,omitempty"`
+		Insecure   bool   `json:"insecure"`
+		HasPass    bool   `json:"hasPass"`
+	} `json:"qbit"`
+	Category     string `json:"category"`
+	Tag          string `json:"tag"`
+	CheckUpdates bool   `json:"checkUpdates"`
+	LastDir      string `json:"lastDir,omitempty"`
+	// PathMap : où D3X voit les dossiers du client (« Z:\data » ici,
+	// « /data » dans le client).
+	PathMap []pathmap.Rule `json:"pathMap"`
+	Watch   surveyOut      `json:"watch"`
+	Links   config.Links   `json:"links"`
+	SSH     struct {
+		Configured bool   `json:"configured"`
+		OK         bool   `json:"ok"`
+		Label      string `json:"label,omitempty"`
+		System     string `json:"system,omitempty"`
+		Error      string `json:"error,omitempty"`
+		Host       string `json:"host,omitempty"`
+		Port       int    `json:"port,omitempty"`
+		User       string `json:"user,omitempty"`
+		KeyPath    string `json:"keyPath,omitempty"`
+	} `json:"ssh"`
+	Appearance struct {
+		Theme         string `json:"theme"`   // appliqué
+		Accent        string `json:"accent"`  // appliqué
+		UITheme       string `json:"uiTheme"` // choisi dans D3X ("" = comme sur V3X)
+		UIAccnt       string `json:"uiAccent"`
+		ProfileTheme  string `json:"profileTheme"` // celui du profil V3X
+		ProfileAccent string `json:"profileAccent"`
+	} `json:"appearance"`
+}
+
+var (
+	themes  = map[string]bool{"dark": true, "light": true, "blue": true}
+	accents = map[string]bool{"bleu": true, "rose": true, "vert": true, "violet": true, "cyan": true, "ambre": true, "braise": true, "lime": true}
+)
+
+// state ne renvoie JAMAIS la clé ni le mot de passe : seulement leur présence.
+func (s *Server) state(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var o stateOut
+	o.Version, o.Update = s.Version, s.update
+	o.V3X.Configured = s.cfg.V3XKey != ""
+	o.V3X.OK = s.me != nil
+	o.V3X.Error = s.v3xErr
+	if s.me != nil {
+		o.V3X.Username, o.V3X.Ratio, o.V3X.HitAndRun = s.me.Username, s.me.Ratio, s.me.HitAndRun
+	}
+	o.Qbit.Kind = s.cfg.ClientKind
+	if o.Qbit.Kind == "" {
+		o.Qbit.Kind = "qbittorrent"
+	}
+	o.Qbit.Configured = s.cfg.QbitURL != ""
+	o.Qbit.OK = s.qbitVer != ""
+	o.Qbit.Error = s.qbitErr
+	o.Qbit.Version = s.qbitVer
+	o.Qbit.URL = maskURL(s.cfg.QbitURL)
+	o.Qbit.User = s.cfg.QbitUser
+	o.Qbit.Insecure = s.cfg.QbitInsecure
+	o.Qbit.HasPass = s.cfg.QbitPass != ""
+	o.Category, o.Tag, o.CheckUpdates = s.cfg.Category, s.cfg.Tag, s.cfg.CheckUpdates
+	o.LastDir = s.cfg.LastDir
+	o.PathMap = append([]pathmap.Rule{}, s.cfg.PathMap...)
+	o.Watch = s.surveyState(s.cfg.Watch)
+	o.Links = s.cfg.Links
+	if s.opts.Remote {
+		o.Mode = "server"
+		if s.opts.Managed == "docker" {
+			o.Mode = "docker"
+		}
+	}
+	if c := s.cfg.SSH; c != nil {
+		o.SSH.Configured, o.SSH.Label, o.SSH.Host, o.SSH.Port, o.SSH.User, o.SSH.KeyPath = true, c.Label(), c.Host, c.Port, c.User, c.KeyPath
+		o.SSH.OK, o.SSH.System, o.SSH.Error = s.ssh != nil, s.sshSys, s.sshErr
+	}
+	// Apparence : choix fait dans D3X, sinon celui du profil V3X, sinon le
+	// défaut du site (sombre, bleu).
+	o.Appearance.Theme, o.Appearance.Accent = "dark", "bleu"
+	if s.me != nil {
+		if t := s.me.Appearance.Theme; t != nil && themes[*t] {
+			o.Appearance.Theme = *t
+		}
+		if a := s.me.Appearance.Accent; a != nil && accents[*a] {
+			o.Appearance.Accent = *a
+		}
+	}
+	o.Appearance.ProfileTheme, o.Appearance.ProfileAccent = o.Appearance.Theme, o.Appearance.Accent
+	if themes[s.cfg.UITheme] {
+		o.Appearance.Theme = s.cfg.UITheme
+	}
+	if accents[s.cfg.UIAccent] {
+		o.Appearance.Accent = s.cfg.UIAccent
+	}
+	o.Appearance.UITheme, o.Appearance.UIAccnt = s.cfg.UITheme, s.cfg.UIAccent
+	writeJSON(w, http.StatusOK, o)
+}
+
+func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		V3XKey       string `json:"v3xKey"`
+		ClientKind   string `json:"clientKind"`
+		QbitURL      string `json:"qbitUrl"`
+		QbitUser     string `json:"qbitUser"`
+		QbitPass     string `json:"qbitPass"`
+		QbitInsecure bool   `json:"qbitInsecure"`
+		Category     string `json:"category"`
+		Tag          string `json:"tag"`
+		CheckUpdates bool   `json:"checkUpdates"`
+		UITheme      string `json:"uiTheme"`
+		UIAccent     string `json:"uiAccent"`
+		// PathMap : absent = inchangé.
+		PathMap *[]pathmap.Rule `json:"pathMap"`
+		// Watch : absent = inchangé.
+		Watch *struct {
+			On        bool  `json:"on"`
+			Minutes   int   `json:"minutes"`
+			Notify    bool  `json:"notify"`
+			AutoAdd   bool  `json:"autoAdd"`
+			Autostart *bool `json:"autostart"`
+		} `json:"watch"`
+		Links *config.Links `json:"links"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&in); err != nil {
+		fail(w, http.StatusBadRequest, errors.New("réglages illisibles"))
+		return
+	}
+	if s.engine.Scanning() {
+		fail(w, http.StatusConflict, errors.New("attends la fin de l'analyse pour changer les réglages"))
+		return
+	}
+	s.mu.Lock()
+	c := *s.cfg
+	// Champ secret laissé vide = on garde l'ancien (la page ne les connaît pas).
+	if k := strings.TrimSpace(in.V3XKey); k != "" {
+		c.V3XKey = k
+	}
+	newURL := strings.TrimSpace(in.QbitURL)
+	// Adresse renvoyée masquée (« user:***@ ») : inchangée, on garde la vraie.
+	if newURL == maskURL(c.QbitURL) {
+		newURL = c.QbitURL
+	}
+	if in.QbitPass != "" {
+		c.QbitPass = in.QbitPass
+	} else if newURL != c.QbitURL || strings.TrimSpace(in.QbitUser) != c.QbitUser || in.ClientKind != c.ClientKind {
+		// Autre client : l'ancien mot de passe ne le concerne pas.
+		c.QbitPass = ""
+	}
+	c.QbitURL, c.QbitUser, c.QbitInsecure = newURL, strings.TrimSpace(in.QbitUser), in.QbitInsecure
+	c.ClientKind = in.ClientKind
+	if c.ClientKind == "qbittorrent" {
+		c.ClientKind = ""
+	}
+	c.Category = strings.TrimSpace(in.Category)
+	c.Tag = strings.TrimSpace(in.Tag)
+	c.CheckUpdates = in.CheckUpdates
+	c.UITheme, c.UIAccent = "", ""
+	if themes[in.UITheme] {
+		c.UITheme = in.UITheme
+	}
+	if accents[in.UIAccent] {
+		c.UIAccent = in.UIAccent
+	}
+	if in.PathMap != nil {
+		rules, err := cleanRules(*in.PathMap)
+		if err != nil {
+			s.mu.Unlock()
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		c.PathMap = rules
+	}
+	if in.Links != nil {
+		in.Links.Dir = strings.TrimSpace(in.Links.Dir)
+		if in.Links.On && in.Links.Dir == "" {
+			s.mu.Unlock()
+			fail(w, http.StatusBadRequest, errors.New("liens physiques : indique le dossier des liens, tel que ton client le voit"))
+			return
+		}
+		c.Links = *in.Links
+	}
+	restartWatch := false
+	if in.Watch != nil {
+		restartWatch = in.Watch.On && !c.Watch.On
+		c.Watch.On, c.Watch.Minutes, c.Watch.Notify, c.Watch.AutoAdd = in.Watch.On, in.Watch.Minutes, in.Watch.Notify, in.Watch.AutoAdd
+		c.Watch.Minutes = c.Watch.Every()
+	}
+	s.cfg = &c
+	s.mu.Unlock()
+	if err := config.Save(&c); err != nil {
+		fail(w, http.StatusInternalServerError, errors.New("réglages non enregistrés : "+err.Error()))
+		return
+	}
+	if restartWatch {
+		s.surveyReset()
+	}
+	if in.Watch != nil && in.Watch.Autostart != nil && desktop.HasAutostart && !s.opts.Remote && *in.Watch.Autostart != desktop.Autostart() {
+		if err := desktop.SetAutostart(*in.Watch.Autostart); err != nil {
+			fail(w, http.StatusInternalServerError, errors.New("lancement avec Windows : "+err.Error()))
+			return
+		}
+	}
+	s.connect()
+	s.state(w, r)
+}
+
+func (s *Server) reconnect(w http.ResponseWriter, r *http.Request) {
+	s.connect()
+	s.state(w, r)
+}
+
+func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
+	if _, _, _, err := s.clients(); err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.engine.StartScan(); err != nil {
+		fail(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.engine.State())
+}
+
+func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
+	s.engine.Stop()
+	writeJSON(w, http.StatusOK, s.engine.State())
+}
+
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.engine.State())
+}
+
+func (s *Server) rows(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{"version": s.engine.State().Version, "rows": s.engine.Rows()})
+}
+
+func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Keys []string `json:"keys"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&in); err != nil || len(in.Keys) == 0 {
+		fail(w, http.StatusBadRequest, errors.New("aucune release choisie"))
+		return
+	}
+	n, err := s.engine.Apply(in.Keys)
+	if err != nil {
+		fail(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"queued": n})
+}
+
+func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<12)).Decode(&in); err != nil || in.Key == "" {
+		fail(w, http.StatusBadRequest, errors.New("release manquante"))
+		return
+	}
+	if err := s.engine.Remove(in.Key); err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) history(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{"events": journal.Last(300)})
+}
+
+// cleanRules : règles de dossiers complètes (les deux côtés), sans doublon.
+func cleanRules(in []pathmap.Rule) ([]pathmap.Rule, error) {
+	out := []pathmap.Rule{}
+	seen := map[string]bool{}
+	for _, r := range in {
+		r.From, r.To = strings.TrimSpace(r.From), strings.TrimSpace(r.To)
+		if r.From == "" && r.To == "" {
+			continue
+		}
+		if r.From == "" || r.To == "" {
+			return nil, errors.New("dossiers du client : remplis les deux côtés de chaque ligne (ou vide-la)")
+		}
+		if len(out) >= 50 {
+			return nil, errors.New("dossiers du client : 50 lignes au plus")
+		}
+		k := strings.ToLower(r.From + "|" + r.To)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// maskURL cache le mot de passe écrit dans une adresse (« user:pass@hôte ») :
+// la page n'en a jamais besoin.
+func maskURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	if _, has := u.User.Password(); !has {
+		return raw
+	}
+	u.User = url.UserPassword(u.User.Username(), "***")
+	return strings.Replace(u.String(), "%2A%2A%2A", "***", 1)
+}

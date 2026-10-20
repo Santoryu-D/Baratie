@@ -1,0 +1,561 @@
+// Package crossseed retrouve sur V3X les releases que ton client seede déjà
+// ailleurs, et les ajoute au client torrent sur les mêmes fichiers.
+//
+// Règles de prudence :
+//   - correspondance par empreinte de contenu (chemins + tailles de chaque
+//     fichier), jamais par taille totale ni par ressemblance de nom ;
+//   - le .torrent reçu de V3X est revérifié en local avant l'ajout ;
+//   - ajout À L'ARRÊT puis vérification complète par le client ; le torrent
+//     n'est démarré que s'il est complet à 100 %. Sinon il reste arrêté :
+//     D3X ne télécharge jamais rien à ta place.
+package crossseed
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/V3x0rV3x/D3X/internal/client"
+	"github.com/V3x0rV3x/D3X/internal/config"
+	"github.com/V3x0rV3x/D3X/internal/links"
+	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"github.com/V3x0rV3x/D3X/internal/v3x"
+)
+
+// Statuts d'une ligne.
+const (
+	StAdd      = "add"       // mêmes fichiers, mêmes noms : ajoutable
+	StRenamed  = "renamed"   // mêmes tailles, noms différents
+	StOnV3X    = "on_v3x"    // déjà seedé pour V3X
+	StInClient = "in_client" // le torrent V3X est déjà dans le client
+	StNone     = "none"      // pas sur V3X
+	StPartial  = "partial"   // téléchargé en partie : rien à seeder en entier
+	StError    = "error"     // .torrent illisible ou export impossible
+	StQueued   = "queued"    // dans la file d'ajout
+	StChecking = "checking"  // ajouté à l'arrêt, le client vérifie
+	StSeeding  = "seeding"   // vérifié à 100 %, démarré
+	StFailed   = "failed"    // vérification incomplète : laissé à l'arrêt
+	StRemoved  = "removed"   // retiré du client (fichiers intacts)
+)
+
+// Domaines de V3X : un torrent qui annonce déjà chez nous est ignoré.
+var v3xHosts = []string{"v3x.club", "v3x.fr", "v3x.tw"}
+
+// IsV3XHost dit si un tracker est celui de V3X.
+func IsV3XHost(h string) bool { return isV3XHost(h) }
+
+func isV3XHost(h string) bool {
+	for _, s := range v3xHosts {
+		if h == s || strings.HasSuffix(h, "."+s) {
+			return true
+		}
+	}
+	return false
+}
+
+// Sig est l'empreinte d'un torrent du client (mise en cache par info-hash).
+type Sig struct {
+	InfoHash    string `json:"infoHash"`
+	Name        string `json:"name"`
+	ContentHash string `json:"contentHash"`
+	SizeHash    string `json:"sizeHash"`
+	Total       int64  `json:"total"`
+	Real        int64  `json:"real"` // hors fichiers de bourrage
+	Files       int    `json:"files"`
+}
+
+// Row est une release du client (copies sur les mêmes données fusionnées).
+type Row struct {
+	Key      string     `json:"key"`
+	Name     string     `json:"name"`
+	Size     int64      `json:"size"`
+	Files    int        `json:"files"`
+	Copies   int        `json:"copies"`
+	Status   string     `json:"status"`
+	Detail   string     `json:"detail,omitempty"`
+	Match    *v3x.Match `json:"match,omitempty"`
+	Progress float64    `json:"progress,omitempty"`
+	// CanAdd : ligne « noms différents » ajoutable (le client sait renommer).
+	CanAdd bool `json:"canAdd,omitempty"`
+	// Path : l'emplacement de la copie, vu par le client.
+	Path string `json:"path,omitempty"`
+
+	contentPath string
+	sig         *Sig
+}
+
+// Progress décrit l'analyse en cours.
+type Progress struct {
+	Phase  string    `json:"phase"` // idle, list, read, match, done, error
+	Done   int       `json:"done"`
+	Total  int       `json:"total"`
+	Detail string    `json:"detail,omitempty"`
+	Error  string    `json:"error,omitempty"`
+	At     time.Time `json:"at,omitempty"`
+}
+
+// watch est un ajout que D3X surveille jusqu'à la fin de la vérification.
+type watch struct {
+	Key         string    `json:"key"`
+	Name        string    `json:"name"`
+	ID          string    `json:"id"`
+	InfoHash    string    `json:"infoHash"`
+	Since       time.Time `json:"since"`
+	SawChecking bool      `json:"sawChecking"`
+	Status      string    `json:"status"` // checking, failed
+	Progress    float64   `json:"progress"`
+	Detail      string    `json:"detail,omitempty"`
+}
+
+// Clients fournit les clients configurés (ils changent avec les réglages).
+type Clients func() (client.Client, *v3x.Client, *config.Config, error)
+
+// Engine garde l'état du cross-seed pour la page.
+type Engine struct {
+	clients Clients
+
+	mu       sync.Mutex
+	rows     map[string]*Row
+	scan     Progress
+	version  int // incrémenté à chaque changement des lignes
+	queue    []string
+	current  string
+	watches  map[string]*watch     // par info-hash V3X
+	final    map[string]WatchState // dernier état connu des ajouts terminés
+	cancel   context.CancelFunc
+	applying bool
+	linker   Linker
+	lib      library
+	batch    int // releases du lot d'ajout en cours
+	batchOK  int // déjà traitées
+}
+
+// New crée le moteur et reprend la surveillance des ajouts en cours.
+func New(c Clients) *Engine {
+	e := &Engine{clients: c, rows: map[string]*Row{}, watches: map[string]*watch{}, final: map[string]WatchState{}, scan: Progress{Phase: "idle"}}
+	e.loadWatches()
+	go e.watchLoop()
+	return e
+}
+
+func (e *Engine) touch() { e.version++ }
+
+// Linker crée (remove=false) ou retire des liens physiques ; chemins vus par
+// le client torrent.
+type Linker func(ctx context.Context, base string, pairs []links.Pair, remove bool) error
+
+// SetLinker branche la création des liens physiques (ce PC ou la seedbox).
+func (e *Engine) SetLinker(l Linker) {
+	e.mu.Lock()
+	e.linker = l
+	e.mu.Unlock()
+}
+
+// linkerFor : le créateur de liens, si le membre a choisi ce repli.
+func (e *Engine) linkerFor(cfg *config.Config) Linker {
+	if cfg == nil || !cfg.Links.On || strings.TrimSpace(cfg.Links.Dir) == "" {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.linker
+}
+
+// ---------- analyse ----------
+
+// Scanning dit si une analyse tourne.
+func (e *Engine) Scanning() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.scan.Phase == "list" || e.scan.Phase == "read" || e.scan.Phase == "match"
+}
+
+// StartScan lance une analyse en arrière-plan.
+func (e *Engine) StartScan() error {
+	e.mu.Lock()
+	if e.scan.Phase == "list" || e.scan.Phase == "read" || e.scan.Phase == "match" {
+		e.mu.Unlock()
+		return errors.New("une analyse est déjà en cours")
+	}
+	if e.applying {
+		e.mu.Unlock()
+		return errors.New("des ajouts sont en cours : attends qu'ils soient finis")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	e.cancel = cancel
+	e.scan = Progress{Phase: "list"}
+	e.mu.Unlock()
+	go func() {
+		err := e.runScan(ctx)
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if err != nil {
+			e.scan.Phase, e.scan.Error = "error", err.Error()
+		} else {
+			e.scan.Phase, e.scan.Detail = "done", ""
+		}
+		e.scan.At = time.Now()
+		e.touch()
+	}()
+	return nil
+}
+
+// Stop interrompt l'analyse ou la file d'ajout.
+func (e *Engine) Stop() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.cancel != nil {
+		e.cancel()
+	}
+	e.queue = nil
+}
+
+func (e *Engine) setProgress(phase string, done, total int, detail string) {
+	e.mu.Lock()
+	e.scan.Phase, e.scan.Done, e.scan.Total, e.scan.Detail = phase, done, total, detail
+	e.mu.Unlock()
+}
+
+// normPath sert de clé de regroupement : / et \ se valent, sans séparateur
+// final ; un chemin Windows se compare sans la casse.
+func normPath(p string) string {
+	n := strings.TrimRight(strings.ReplaceAll(p, `\`, "/"), "/")
+	if len(n) >= 2 && n[1] == ':' {
+		n = strings.ToLower(n)
+	}
+	return n
+}
+
+func (e *Engine) runScan(ctx context.Context) error {
+	q, v, cfg, err := e.clients()
+	if err != nil {
+		return err
+	}
+	canLink := e.linkerFor(cfg) != nil
+	all, err := q.List(ctx, nil)
+	if err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	type group struct {
+		copies []client.Torrent
+		onV3X  bool
+	}
+	groups := map[string]*group{}
+	var order []string
+	for _, t := range all {
+		for _, h := range t.Hashes {
+			known[h] = true
+		}
+		if t.Progress < 1 || t.ContentPath == "" {
+			continue
+		}
+		k := normPath(t.ContentPath)
+		g := groups[k]
+		if g == nil {
+			g = &group{}
+			groups[k] = g
+			order = append(order, k)
+		}
+		g.copies = append(g.copies, t)
+		for _, h := range t.Trackers {
+			if isV3XHost(h) {
+				g.onV3X = true
+			}
+		}
+	}
+
+	// Ordre stable (par emplacement) : d'une analyse à l'autre, la même copie
+	// sert à l'ajout quand il y en a plusieurs identiques.
+	sort.Strings(order)
+
+	cache := loadSigCache()
+	fresh := map[string]Sig{}
+	rows := map[string]*Row{}
+	var toRead []*Row
+	for _, k := range order {
+		g := groups[k]
+		rep := g.copies[0]
+		r := &Row{Key: strings.ToLower(rep.Hash), Name: rep.Name, Size: rep.TotalSize, Copies: len(g.copies), contentPath: rep.ContentPath, Path: rep.ContentPath}
+		rows[r.Key] = r
+		if g.onV3X {
+			r.Status = StOnV3X
+			continue
+		}
+		if s, ok := cache[r.Key]; ok {
+			s := s
+			r.sig = &s
+			fresh[r.Key] = s
+		} else {
+			toRead = append(toRead, r)
+		}
+		r.Status = StNone
+	}
+
+	// Lecture des .torrent d'origine (4 à la fois), seulement ceux absents du cache.
+	e.setProgress("read", 0, len(toRead), "")
+	var (
+		wg   sync.WaitGroup
+		sem  = make(chan struct{}, 4)
+		mu   sync.Mutex
+		done int
+	)
+	for _, r := range toRead {
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(r *Row) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s, err := sigFromClient(ctx, q, r.Key, r.Name)
+			mu.Lock()
+			defer mu.Unlock()
+			done++
+			if err != nil {
+				r.Status, r.Detail = StError, err.Error()
+			} else {
+				r.sig = s
+				fresh[r.Key] = *s
+			}
+			e.setProgress("read", done, len(toRead), "")
+		}(r)
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return errors.New("analyse arrêtée")
+	}
+	saveSigCache(fresh)
+
+	// Téléchargé en partie : moins de données sélectionnées que la release.
+	var items []v3x.MatchItem
+	byKey := map[string]*Row{}
+	for _, k := range order {
+		g := groups[k]
+		r := rows[strings.ToLower(g.copies[0].Hash)]
+		if r.sig == nil || r.Status != StNone {
+			continue
+		}
+		r.Files = r.sig.Files
+		if g.copies[0].Size < r.sig.Real {
+			r.Status, r.Detail = StPartial, "fichiers en partie désélectionnés dans le client"
+			continue
+		}
+		// Pas d'info-hash : celui d'un torrent d'un autre tracker privé lui est
+		// propre et dirait au site d'où vient ta copie. Ce qui est déjà sur V3X
+		// se repère ici, par le tracker et par les info-hash connus du client.
+		// La clé envoyée est un simple numéro d'ordre, pour la même raison.
+		k := strconv.Itoa(len(items))
+		items = append(items, v3x.MatchItem{Key: k, ContentHash: r.sig.ContentHash, SizeHash: r.sig.SizeHash, Total: r.sig.Total})
+		byKey[k] = r
+	}
+
+	// Comparaison au catalogue, 500 empreintes par appel.
+	retry := &v3x.Retry{OnWait: func(d time.Duration) {
+		e.mu.Lock()
+		if d > 0 {
+			e.scan.Detail = fmt.Sprintf("V3X limite les appels, reprise dans %d s", int(d.Round(time.Second)/time.Second))
+		} else {
+			e.scan.Detail = ""
+		}
+		e.mu.Unlock()
+	}}
+	for i := 0; i < len(items); i += v3x.MatchBatchSize {
+		end := i + v3x.MatchBatchSize
+		if end > len(items) {
+			end = len(items)
+		}
+		e.setProgress("match", i, len(items), "")
+		res, err := v.MatchBatch(ctx, retry, items[i:end])
+		if err != nil {
+			return err
+		}
+		for key, m := range res {
+			r := byKey[key]
+			if r == nil || m == nil {
+				continue
+			}
+			r.Match = m
+			switch {
+			case m.Kind == "self":
+				r.Status = StOnV3X
+			case known[strings.ToLower(m.InfoHash)]:
+				r.Status = StInClient
+			case m.Kind == "exact":
+				r.Status = StAdd
+			default:
+				r.Status = StRenamed
+				if q.CanRename() {
+					r.CanAdd = true
+					r.Detail = "mêmes fichiers sous d'autres noms : D3X peut l'ajouter sous les noms de ta copie, sans rien toucher sur le disque"
+				} else if canLink {
+					r.CanAdd = true
+					r.Detail = "mêmes fichiers sous d'autres noms : D3X peut la ranger dans ton dossier de liens, ses fichiers étant des liens physiques vers ta copie (aucune place en plus)"
+				} else {
+					r.Detail = "mêmes fichiers sous d'autres noms : " + q.Kind() + " ne sait pas renommer les fichiers d'un torrent"
+				}
+			}
+		}
+	}
+	e.setProgress("match", len(items), len(items), "")
+
+	// Plusieurs copies identiques rangées à des endroits différents (une par
+	// tracker, par exemple) trouvent la même release V3X : une seule ligne,
+	// la première copie servira à l'ajout, les autres sont comptées.
+	firstOf := map[string]*Row{}
+	for _, k := range order {
+		r := rows[strings.ToLower(groups[k].copies[0].Hash)]
+		if r == nil || r.Match == nil || (r.Status != StAdd && r.Status != StRenamed) {
+			continue
+		}
+		if f := firstOf[r.Match.ID]; f != nil {
+			f.Copies += r.Copies
+			delete(rows, r.Key)
+			continue
+		}
+		firstOf[r.Match.ID] = r
+	}
+
+	e.mu.Lock()
+	e.rows = rows
+	e.touch()
+	e.mu.Unlock()
+	return nil
+}
+
+// sigFromClient : l'empreinte d'un torrent du client, par son .torrent
+// d'origine quand le client sait le rendre (qBittorrent 4.5+), sinon par la
+// liste de fichiers qu'il donne (Transmission, Deluge, rTorrent).
+func sigFromClient(ctx context.Context, q client.Client, hash, name string) (*Sig, error) {
+	raw, err := q.Export(ctx, hash)
+	if err == nil {
+		t, err := torrent.Parse(raw)
+		if err != nil {
+			return nil, err
+		}
+		return sigOf(t), nil
+	}
+	if !errors.Is(err, client.ErrNoExport) {
+		return nil, err
+	}
+	files, total, err := q.Files(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	var kept []torrent.File
+	for _, f := range files {
+		if !torrent.IsPadPath(f.Path) {
+			kept = append(kept, f)
+		}
+	}
+	if len(kept) == 0 || total <= 0 {
+		return nil, errors.New("liste de fichiers vide")
+	}
+	s := &Sig{Name: name, ContentHash: torrent.ContentSignature(kept, total), SizeHash: torrent.SizeSignature(kept, total), Total: total, Files: len(kept)}
+	for _, f := range kept {
+		s.Real += f.Size
+	}
+	return s, nil
+}
+
+func sigOf(t *torrent.Torrent) *Sig {
+	s := &Sig{InfoHash: t.InfoHash, Name: t.Name, ContentHash: t.ContentHash, SizeHash: t.SizeHash, Total: t.Total, Files: len(t.Files)}
+	for _, f := range t.Files {
+		s.Real += f.Size
+	}
+	return s
+}
+
+func loadSigCache() map[string]Sig {
+	out := map[string]Sig{}
+	p, err := config.Path("signatures.json")
+	if err != nil {
+		return out
+	}
+	if b, err := os.ReadFile(p); err == nil {
+		_ = json.Unmarshal(b, &out)
+	}
+	return out
+}
+
+func saveSigCache(m map[string]Sig) {
+	if b, err := json.Marshal(m); err == nil {
+		_ = config.WriteFileAtomic("signatures.json", b)
+	}
+}
+
+// ---------- état pour la page ----------
+
+// Status est le résumé léger interrogé chaque seconde par la page.
+type Status struct {
+	Scan     Progress       `json:"scan"`
+	Version  int            `json:"version"`
+	Counts   map[string]int `json:"counts"`
+	Queue    int            `json:"queue"`
+	Current  string         `json:"current,omitempty"`
+	Applying bool           `json:"applying"`
+	Batch    int            `json:"batch"`
+	BatchOK  int            `json:"batchDone"`
+}
+
+// State renvoie le résumé.
+func (e *Engine) State() Status {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	counts := map[string]int{}
+	for _, r := range e.rows {
+		counts[e.statusOf(r)]++
+	}
+	return Status{Scan: e.scan, Version: e.version, Counts: counts, Queue: len(e.queue), Current: e.current, Applying: e.applying, Batch: e.batch, BatchOK: e.batchOK}
+}
+
+// statusOf : le statut d'une ligne, suivi des ajouts compris (verrou tenu).
+func (e *Engine) statusOf(r *Row) string {
+	if r.Match != nil {
+		if w := e.watches[strings.ToLower(r.Match.InfoHash)]; w != nil {
+			return w.Status
+		}
+	}
+	return r.Status
+}
+
+// Groupes de la page (un onglet chacun) : à l'intérieur d'un groupe, l'ordre
+// ne dépend pas du statut, pour que les lignes ne sautent pas pendant l'ajout.
+var statusGroup = map[string]int{StAdd: 0, StQueued: 0, StChecking: 0, StFailed: 0, StSeeding: 1, StInClient: 1, StOnV3X: 1, StRenamed: 2, StNone: 3, StPartial: 4, StError: 4, StRemoved: 4}
+
+// Rows renvoie les lignes, les plus utiles d'abord : à ajouter, et parmi
+// elles les releases les moins seedées sur V3X (celles qui ont besoin de toi).
+func (e *Engine) Rows() []Row {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]Row, 0, len(e.rows))
+	for _, r := range e.rows {
+		c := *r
+		c.Status = e.statusOf(r)
+		if r.Match != nil {
+			if w := e.watches[strings.ToLower(r.Match.InfoHash)]; w != nil {
+				c.Progress, c.Detail = w.Progress, w.Detail
+			}
+		}
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if statusGroup[a.Status] != statusGroup[b.Status] {
+			return statusGroup[a.Status] < statusGroup[b.Status]
+		}
+		if a.Match != nil && b.Match != nil && a.Match.Seeders != b.Match.Seeders {
+			return a.Match.Seeders < b.Match.Seeders
+		}
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+	})
+	return out
+}

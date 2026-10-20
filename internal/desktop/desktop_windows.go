@@ -1,0 +1,57 @@
+//go:build windows
+
+package desktop
+
+import (
+	"os/exec"
+	"syscall"
+	"unsafe"
+
+	"fyne.io/systray"
+)
+
+// HasTray : l'icône de la zone de notification existe sous Windows.
+const HasTray = true
+
+// Tray affiche l'icône de D3X (menu « Ouvrir D3X », « Quitter » ; clic sur
+// l'icône = ouvrir) et bloque jusqu'à Quit. ready est appelé une fois l'icône
+// posée.
+func Tray(ready, onOpen, onQuit func()) {
+	systray.Run(func() {
+		systray.SetIcon(Icon)
+		systray.SetTooltip("D3X")
+		open := systray.AddMenuItem("Ouvrir D3X", "Ouvrir la fenêtre de D3X")
+		systray.AddSeparator()
+		quit := systray.AddMenuItem("Quitter", "Arrêter D3X")
+		systray.SetOnTapped(onOpen)
+		go func() {
+			for {
+				select {
+				case <-open.ClickedCh:
+					onOpen()
+				case <-quit.ClickedCh:
+					onQuit()
+					return
+				}
+			}
+		}()
+		ready()
+	}, func() {})
+}
+
+// QuitTray retire l'icône et rend la main à Tray.
+func QuitTray() { systray.Quit() }
+
+// MessageBox montre un message (il n'y a pas de console sous Windows).
+func MessageBox(title, text string) {
+	u := syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW")
+	t, _ := syscall.UTF16PtrFromString(title)
+	m, _ := syscall.UTF16PtrFromString(text)
+	const mbIconWarning = 0x30
+	u.Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)), mbIconWarning)
+}
+
+// hideConsole : un programme lancé depuis D3X n'ouvre pas de console.
+func hideConsole(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW
+}
