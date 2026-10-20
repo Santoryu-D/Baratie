@@ -1268,6 +1268,10 @@ function rowEl(r) {
     box.append(b);
   }
   if (r.status === "failed") {
+    const rb = el("button", "btn small", "Revérifier");
+    rb.title = "Relance la vérification dans ton client : la release démarre si elle atteint 100 %.";
+    rb.addEventListener("click", () => recheckRow(r, rb));
+    box.append(rb);
     const b = el("button", "btn small", "Retirer du client");
     b.title = "Retire ce torrent de ton client. Tes fichiers ne sont pas touchés.";
     b.addEventListener("click", () => removeRow(r, b));
@@ -1323,6 +1327,18 @@ async function applySelected() {
     if (e.message !== "session") toast(e.message, "bad");
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function recheckRow(r, btn) {
+  btn.disabled = true;
+  try {
+    await api("/ui/recheck", { key: r.key });
+    toast("Vérification relancée dans ton client.", "ok");
+    poll();
+  } catch (e) {
+    btn.disabled = false;
+    if (e.message !== "session") toast(e.message, "bad");
   }
 }
 

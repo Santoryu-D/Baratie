@@ -285,6 +285,7 @@ func (e *Engine) step(ctx context.Context, q client.Client, h string, byHash map
 	case t.Checking:
 		e.mu.Lock()
 		w.SawChecking, w.Progress = true, t.Progress
+		w.EndAt = time.Time{}
 		e.mu.Unlock()
 	case t.Progress >= 1:
 		if err := q.Start(ctx, h); err != nil {
@@ -294,10 +295,95 @@ func (e *Engine) step(ctx context.Context, q client.Client, h string, byHash map
 		set(StSeeding, "")
 		journal.Add(journal.Event{Kind: "crossseed", Name: w.Name, InfoHash: h, ID: w.ID, Detail: "vérifié à 100 %, en seed"})
 		e.forget(h)
-	case w.SawChecking || time.Since(w.Since) > 45*time.Second:
+	case w.SawChecking:
+		// Vérification finie sous 100 % : retenue seulement une fois stable.
+		e.mu.Lock()
+		if w.EndAt.IsZero() || t.Progress != w.EndProgress {
+			w.EndAt, w.EndProgress = time.Now(), t.Progress
+			e.mu.Unlock()
+			return
+		}
+		stable := time.Since(w.EndAt) >= endStable
+		e.mu.Unlock()
+		if !stable {
+			return
+		}
 		set(StFailed, "vérifié à "+pct(t.Progress)+" : tes fichiers diffèrent de la release V3X, le torrent reste arrêté")
 		journal.Add(journal.Event{Kind: "crossseed_failed", Name: w.Name, InfoHash: h, ID: w.ID, Detail: w.Detail})
+	default:
+		// Jamais vu en vérification : la demande s'est perdue (client pas encore
+		// prêt juste après l'ajout, retour de V3x0r le 21/10/26 : des releases
+		// identiques morceau par morceau marquées « vérifié à 0 % »). On relance.
+		e.mu.Lock()
+		last := w.RecheckAt
+		if last.IsZero() {
+			last = w.Since
+		}
+		due := time.Since(last) >= recheckGap
+		tries := w.Rechecks
+		e.mu.Unlock()
+		if !due {
+			return
+		}
+		if tries < maxRechecks {
+			_ = q.Recheck(ctx, h)
+			e.mu.Lock()
+			w.Rechecks, w.RecheckAt = tries+1, time.Now()
+			e.mu.Unlock()
+			return
+		}
+		set(StFailed, "ton client n'a pas lancé la vérification : relance-la avec « Revérifier »")
+		journal.Add(journal.Event{Kind: "crossseed_failed", Name: w.Name, InfoHash: h, ID: w.ID, Detail: w.Detail})
 	}
+}
+
+// Rythme de la surveillance des vérifications (raccourci dans les tests).
+var (
+	recheckGap  = 30 * time.Second // avant de relancer une vérification jamais vue
+	maxRechecks = 3
+	endStable   = 20 * time.Second // fin sous 100 % stable avant de conclure
+)
+
+// Recheck relance la vérification d'un ajout marqué en échec (bouton
+// « Revérifier ») : il repasse sous surveillance et démarrera à 100 %.
+func (e *Engine) Recheck(key string) error {
+	e.mu.Lock()
+	var hash, cid string
+	for h, w := range e.watches {
+		if w.Key == key && w.Status == StFailed {
+			hash, cid = h, w.Client
+		}
+	}
+	e.mu.Unlock()
+	if hash == "" {
+		return errors.New("rien à revérifier pour cette release")
+	}
+	env, err := e.clients()
+	if err != nil {
+		return err
+	}
+	t := env.Get(cid)
+	if t == nil {
+		return env.Unreachable(cid)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := t.Client.Recheck(ctx, hash); err != nil {
+		return errors.New("vérification impossible à lancer : " + err.Error())
+	}
+	e.mu.Lock()
+	if w := e.watches[hash]; w != nil {
+		w.Status, w.Detail, w.Progress = StChecking, "", 0
+		w.Since, w.SawChecking, w.Rechecks, w.RecheckAt, w.EndAt = time.Now(), false, 0, time.Time{}, time.Time{}
+		if r := e.rows[w.Key]; r != nil {
+			r.Status, r.Detail = StChecking, ""
+		}
+	}
+	delete(e.final, hash)
+	e.saveWatchesLocked()
+	e.touch()
+	e.mu.Unlock()
+	return nil
 }
 
 // pct écrit un pourcentage à la française (« 62,4 % »).

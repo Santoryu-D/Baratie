@@ -96,6 +96,9 @@ type fakeQbit struct {
 	names   map[string]map[int]string
 	renames []string
 	disk    map[string]int64
+	// Demandes de vérification ignorées (client pas encore prêt), par
+	// info-hash : la vérification ne part qu'à la relance.
+	dropRecheck map[string]int
 }
 
 func (f *fakeQbit) namesOf(h string, raw []byte) map[int]string {
@@ -212,6 +215,10 @@ func (f *fakeQbit) handler(t *testing.T) http.Handler {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		h := strings.ToLower(r.Form.Get("hashes"))
+		if f.dropRecheck[h] > 0 {
+			f.dropRecheck[h]--
+			return
+		}
 		if ft := f.list[h]; ft != nil {
 			ft.checkLeft = 2
 			if f.disk != nil {
@@ -343,7 +350,11 @@ func TestScanAndApply(t *testing.T) {
 	fq := &fakeQbit{list: map[string]*fakeTorrent{}, complete: map[string]float64{
 		strings.ToLower(pa.InfoHash): 1,   // A : fichiers identiques, 100 %
 		strings.ToLower(pb.InfoHash): 0.4, // B : fichiers abîmés, 40 %
-	}}
+	},
+		// A : la première demande de vérification se perd (V3x0r, 21/10/26) ;
+		// la relance doit quand même le mettre en seed, pas « vérifié à 0 % ».
+		dropRecheck: map[string]int{strings.ToLower(pa.InfoHash): 1},
+	}
 	for _, x := range []struct {
 		raw  []byte
 		path string
@@ -532,6 +543,7 @@ func waitFor(t *testing.T, ok func() bool) {
 // précédents tournent encore et lisent ces valeurs.
 func TestMain(m *testing.M) {
 	watchEvery, downloadGap = 20*time.Millisecond, 0
+	recheckGap, endStable = 100*time.Millisecond, 60*time.Millisecond
 	os.Exit(m.Run())
 }
 

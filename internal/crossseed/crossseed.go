@@ -120,6 +120,15 @@ type watch struct {
 	InfoHash    string    `json:"infoHash"`
 	Since       time.Time `json:"since"`
 	SawChecking bool      `json:"sawChecking"`
+	// Vérification relancée (la demande se perd quand le client n'est pas
+	// encore prêt juste après l'ajout) : combien de fois, et quand.
+	Rechecks  int       `json:"rechecks,omitempty"`
+	RecheckAt time.Time `json:"recheckAt,omitempty"`
+	// Fin de vérification sous 100 % vue à ce moment-là, avec cette progression :
+	// l'échec n'est retenu qu'une fois l'état stable (qBittorrent 5 passe par des
+	// états intermédiaires pendant une revérification).
+	EndAt       time.Time `json:"endAt,omitempty"`
+	EndProgress float64   `json:"endProgress,omitempty"`
 	Status      string    `json:"status"` // checking, failed
 	Progress    float64   `json:"progress"`
 	Detail      string    `json:"detail,omitempty"`

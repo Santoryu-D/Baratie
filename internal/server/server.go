@@ -137,6 +137,7 @@ func NewWith(version string, cfg *config.Config, token string, port int, opts Op
 	s.mux.HandleFunc("GET /ui/rows", s.rows)
 	s.mux.HandleFunc("POST /ui/apply", s.apply)
 	s.mux.HandleFunc("POST /ui/remove", s.remove)
+	s.mux.HandleFunc("POST /ui/recheck", s.recheck)
 	s.mux.HandleFunc("GET /ui/history", s.history)
 	s.mux.HandleFunc("GET /ui/fs", s.browse)
 	s.mux.HandleFunc("GET /ui/client/detect", func(w http.ResponseWriter, r *http.Request) {
@@ -524,6 +525,23 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"queued": n})
+}
+
+// recheck relance la vérification d'un ajout marqué en échec (bouton
+// « Revérifier ») : il démarrera à 100 %.
+func (s *Server) recheck(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<12)).Decode(&in); err != nil || in.Key == "" {
+		fail(w, http.StatusBadRequest, errors.New("release manquante"))
+		return
+	}
+	if err := s.engine.Recheck(in.Key); err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) remove(w http.ResponseWriter, r *http.Request) {
