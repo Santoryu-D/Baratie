@@ -404,7 +404,7 @@ func TestScanAndApply(t *testing.T) {
 	q, _ := client.New(client.Options{URL: qs.URL, User: "admin", Pass: "secret"})
 	v := v3x.New(vs.URL, "cle", "D3X/test")
 	cfg := config.Defaults()
-	e := New(func() (client.Client, *v3x.Client, *config.Config, error) { return q, v, cfg, nil })
+	e := New(oneClient(q, v, cfg))
 
 	if err := e.StartScan(); err != nil {
 		t.Fatal(err)
@@ -502,6 +502,18 @@ func TestScanAndApply(t *testing.T) {
 	}
 	if len(fq.started) != 1 || fq.started[0] != strings.ToLower(pa.InfoHash) {
 		t.Fatalf("démarrés : %v ; seul A (vérifié à 100 %%) devait l'être", fq.started)
+	}
+}
+
+// oneClient : un seul client, comme avant le multi-clients (sa correspondance
+// de dossiers et son dossier de liens sont ceux des anciens réglages).
+func oneClient(q client.Client, v *v3x.Client, cfg *config.Config) Clients {
+	return func() (*Env, error) {
+		c := *cfg
+		if len(c.Clients) == 0 {
+			c.Clients = []config.ClientConfig{{ID: "c1", URL: "test", PathMap: cfg.PathMap, LinksDir: cfg.Links.Dir}}
+		}
+		return &Env{V3X: v, Cfg: &c, Targets: []Target{{ID: "c1", Name: q.Kind(), Client: q, PathMap: cfg.PathMap, LinksDir: cfg.Links.Dir}}}, nil
 	}
 }
 

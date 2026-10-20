@@ -113,17 +113,26 @@ func (e *Engine) runQueue(ctx context.Context) {
 }
 
 // addOne : télécharge le .torrent V3X, le revérifie, l'ajoute à l'arrêt et
-// demande la vérification. Renvoie le statut de la ligne.
+// demande la vérification, dans le client qui a la copie. Renvoie le statut
+// de la ligne.
 func (e *Engine) addOne(ctx context.Context, r *Row) (string, string) {
-	q, v, cfg, err := e.clients()
+	again := StAdd // rien n'a été fait : la ligne reste ajoutable
+	if r.Match != nil && r.Match.Kind == "renamed" {
+		again = StRenamed
+	}
+	env, err := e.clients()
 	if err != nil {
-		return StAdd, err.Error()
+		return again, err.Error()
+	}
+	tg := env.Get(r.Client)
+	if tg == nil {
+		return again, env.Unreachable(r.Client).Error()
 	}
 	if r.Match != nil && r.Match.Kind == "renamed" {
-		return e.addRenamed(ctx, q, v, cfg, r)
+		return e.addRenamed(ctx, env, *tg, r)
 	}
 	m := r.Match
-	raw, err := v.DownloadTorrent(ctx, &v3x.Retry{}, m.ID)
+	raw, err := env.V3X.DownloadTorrent(ctx, &v3x.Retry{}, m.ID)
 	if err != nil {
 		return StAdd, err.Error()
 	}
@@ -145,9 +154,9 @@ func (e *Engine) addOne(ctx context.Context, r *Row) (string, string) {
 	if !ok {
 		// Ta copie a été renommée dans le client : mêmes fichiers, autres
 		// noms sur le disque.
-		return e.addRenamed(ctx, q, v, cfg, r)
+		return e.addRenamed(ctx, env, *tg, r)
 	}
-	if hash, err := e.AddAndVerify(ctx, q, cfg, r.Key, m.ID, raw, save); err != nil {
+	if hash, err := e.AddAndVerify(ctx, *tg, env.Cfg, r.Key, m.ID, raw, save); err != nil {
 		switch {
 		case errors.Is(err, ErrInClient):
 			return StInClient, ""
@@ -191,38 +200,57 @@ func saveDir(contentPath, rel string) (string, bool) {
 func (e *Engine) watchLoop() {
 	for {
 		time.Sleep(watchEvery)
+		// Les vérifications en cours, client par client.
 		e.mu.Lock()
-		var hashes []string
+		byClient := map[string][]string{}
 		for h, w := range e.watches {
 			if w.Status == StChecking {
-				hashes = append(hashes, h)
+				byClient[w.Client] = append(byClient[w.Client], h)
 			}
 		}
 		e.mu.Unlock()
-		if len(hashes) == 0 {
+		if len(byClient) == 0 {
 			continue
 		}
-		q, _, _, err := e.clients()
+		env, err := e.clients()
 		if err != nil {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		lst, err := q.List(ctx, hashes)
-		if err != nil {
-			cancel()
-			continue
-		}
-		byHash := map[string]client.Torrent{}
-		for _, t := range lst {
-			byHash[t.Hash] = t
-			for _, h := range t.Hashes {
-				byHash[h] = t
+		for id, hashes := range byClient {
+			t := env.Get(id)
+			if t == nil && id != "" && env.Cfg != nil && env.Cfg.Client(id) == nil {
+				// Client retiré des réglages : plus personne à surveiller.
+				for _, h := range hashes {
+					e.mu.Lock()
+					if w := e.watches[h]; w != nil {
+						w.Status, w.Detail = StRemoved, "client retiré des réglages avant la fin de la vérification"
+					}
+					e.mu.Unlock()
+					e.forget(h)
+				}
+				continue
 			}
+			if t == nil {
+				continue // client injoignable : on attend qu'il revienne
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			lst, err := t.Client.List(ctx, hashes)
+			if err != nil {
+				cancel()
+				continue
+			}
+			byHash := map[string]client.Torrent{}
+			for _, x := range lst {
+				byHash[x.Hash] = x
+				for _, h := range x.Hashes {
+					byHash[h] = x
+				}
+			}
+			for _, h := range hashes {
+				e.step(ctx, t.Client, h, byHash)
+			}
+			cancel()
 		}
-		for _, h := range hashes {
-			e.step(ctx, q, h, byHash)
-		}
-		cancel()
 		e.mu.Lock()
 		e.saveWatchesLocked()
 		e.touch()
@@ -314,14 +342,15 @@ type WatchState struct {
 	Detail   string  `json:"detail,omitempty"`
 }
 
-// Watch met sous surveillance un torrent qu'on vient d'ajouter À L'ARRÊT et
-// dont la vérification est lancée : il sera démarré à 100 %, laissé arrêté
-// sinon. Sert aussi à la publication (seed de sa propre release).
-func (e *Engine) Watch(key, name, id, hash string) {
+// Watch met sous surveillance un torrent qu'on vient d'ajouter À L'ARRÊT au
+// client clientID et dont la vérification est lancée : il sera démarré à
+// 100 %, laissé arrêté sinon. Sert aussi à la publication (seed de sa propre
+// release).
+func (e *Engine) Watch(clientID, key, name, id, hash string) {
 	hash = strings.ToLower(hash)
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.watches[hash] = &watch{Key: key, Name: name, ID: id, InfoHash: hash, Since: time.Now(), Status: StChecking}
+	e.watches[hash] = &watch{Client: clientID, Key: key, Name: name, ID: id, InfoHash: hash, Since: time.Now(), Status: StChecking}
 	delete(e.final, hash)
 	e.saveWatchesLocked()
 }
@@ -338,9 +367,11 @@ func (e *Engine) WatchOf(hash string) (WatchState, bool) {
 	return st, ok
 }
 
-// AddAndVerify ajoute un .torrent à l'arrêt sur des données existantes, lance
-// la vérification et le met sous surveillance. savePath est vu par le client.
-func (e *Engine) AddAndVerify(ctx context.Context, q client.Client, cfg *config.Config, key, id string, raw []byte, savePath string) (string, error) {
+// AddAndVerify ajoute un .torrent à l'arrêt sur des données existantes, au
+// client tg, lance la vérification et le met sous surveillance. savePath est
+// vu par ce client.
+func (e *Engine) AddAndVerify(ctx context.Context, tg Target, cfg *config.Config, key, id string, raw []byte, savePath string) (string, error) {
+	q := tg.Client
 	t, err := torrent.Parse(raw)
 	if err != nil {
 		return "", errors.New("le .torrent reçu de V3X est illisible")
@@ -369,7 +400,7 @@ func (e *Engine) AddAndVerify(ctx context.Context, q client.Client, cfg *config.
 	if err := q.Recheck(ctx, hash); err != nil {
 		return hash, errors.New("vérification impossible à lancer : " + err.Error())
 	}
-	e.Watch(key, t.Name, id, hash)
+	e.Watch(tg.ID, key, t.Name, id, hash)
 	return hash, nil
 }
 
@@ -380,23 +411,27 @@ var ErrInClient = errors.New("ce torrent est déjà dans le client")
 // fichiers ne sont jamais touchés.
 func (e *Engine) Remove(key string) error {
 	e.mu.Lock()
-	var hash string
+	var hash, cid string
 	for h, w := range e.watches {
 		if w.Key == key && w.Status == StFailed {
-			hash = h
+			hash, cid = h, w.Client
 		}
 	}
 	e.mu.Unlock()
 	if hash == "" {
 		return errors.New("rien à retirer pour cette release")
 	}
-	q, _, _, err := e.clients()
+	env, err := e.clients()
 	if err != nil {
 		return err
 	}
+	t := env.Get(cid)
+	if t == nil {
+		return env.Unreachable(cid)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := q.RemoveKeepFiles(ctx, hash); err != nil {
+	if err := t.Client.RemoveKeepFiles(ctx, hash); err != nil {
 		return err
 	}
 	e.mu.Lock()

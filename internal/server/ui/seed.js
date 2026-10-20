@@ -12,6 +12,7 @@ const SEED_CLIENT = {
   checking: ["Vérification", ""],
   downloading: ["Téléchargement", ""],
   missing: ["Absente du client", "bad"],
+  unknown: ["Client injoignable", "warn"],
 };
 
 function fmtHours(sec) {
@@ -62,6 +63,10 @@ function seedRender() {
   const d = seedView.data;
   if (!d) return;
   const items = d.items || [];
+  const warn = $("#seed-warn");
+  warn.textContent = d.warn ? d.warn + ". Ce qu'il seede n'est pas connu : rien n'est compté comme absent." : "";
+  warn.classList.toggle("hidden", !d.warn);
+  $("#seed-col-client").textContent = multiClients() ? "Dans tes clients" : "Dans ton client";
   const atRisk = items.filter((x) => x.risk === "bad").length;
   const sum = $("#seed-summary");
   sum.replaceChildren(
@@ -96,6 +101,7 @@ function seedRender() {
     const tdC = el("td");
     const [lab, kind] = SEED_CLIENT[x.client] || [x.client, ""];
     tdC.append(el("span", "pill " + kind, lab));
+    if (x.where) tdC.append(el("div", "sub", x.where));
     if (x.client === "seeding" && !x.seedingNow) tdC.append(el("div", "sub", "pas encore vue par le tracker"));
     const tdA = el("td");
     if (x.client === "stopped") {
@@ -107,6 +113,8 @@ function seedRender() {
       tdA.append(el("span", "sub", "remets-la dans ton client"));
     } else if (x.client === "incomplete") {
       tdA.append(el("span", "sub", "à reprendre toi-même"));
+    } else if (x.client === "unknown") {
+      tdA.append(el("span", "sub", "peut-être dans le client injoignable"));
     }
     tr.append(tdN, tdS, tdD, tdC, tdA);
     tb.append(tr);
@@ -123,7 +131,7 @@ function seedRender() {
   for (const x of rl) {
     const li = el("li");
     const left = el("div");
-    left.append(seedLink(x.torrentId, x.name), el("div", "sub", x.seeders + (x.seeders > 1 ? " seeders" : " seeder") + " · relais ouvert jusqu'au " + fmtDeadline(x.until)));
+    left.append(seedLink(x.torrentId, x.name), el("div", "sub", x.seeders + (x.seeders > 1 ? " seeders" : " seeder") + " · relais ouvert jusqu'au " + fmtDeadline(x.until) + (x.where ? " · " + x.where : "")));
     li.append(left);
     if (x.addKey) {
       const b = el("button", "btn small primary", "Ajouter en cross-seed");
@@ -155,10 +163,10 @@ function seedRender() {
   // Torrents V3X arrêtés.
   const st = d.stopped || [];
   $("#seed-stopped-card").classList.toggle("hidden", st.length === 0);
-  $("#seed-stopped-txt").textContent = st.length + (st.length > 1 ? " releases V3X complètes sont arrêtées" : " release V3X complète est arrêtée") + " dans ton client : elles ne seedent pas, ni ton ratio ni tes jetons n'en profitent.";
+  $("#seed-stopped-txt").textContent = st.length + (st.length > 1 ? " releases V3X complètes sont arrêtées" : " release V3X complète est arrêtée") + (multiClients() ? " dans tes clients" : " dans ton client") + " : elles ne seedent pas, ni ton ratio ni tes jetons n'en profitent.";
   const sl = $("#seed-stopped-list");
   sl.replaceChildren();
-  for (const x of st.slice(0, 200)) sl.append(el("li", null, x.name + " · " + fmtSize(x.size)));
+  for (const x of st.slice(0, 200)) sl.append(el("li", null, x.name + (x.where ? " · " + x.where : "") + " · " + fmtSize(x.size)));
 }
 
 async function seedStart(hashes, btn) {

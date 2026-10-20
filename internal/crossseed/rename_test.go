@@ -14,6 +14,7 @@ import (
 	"github.com/V3x0rV3x/D3X/internal/client"
 	"github.com/V3x0rV3x/D3X/internal/config"
 	"github.com/V3x0rV3x/D3X/internal/links"
+	"github.com/V3x0rV3x/D3X/internal/pathmap"
 	"github.com/V3x0rV3x/D3X/internal/qbit"
 	"github.com/V3x0rV3x/D3X/internal/torrent"
 	"github.com/V3x0rV3x/D3X/internal/v3x"
@@ -172,7 +173,7 @@ func TestRenamedApply(t *testing.T) {
 	q, _ := client.New(client.Options{URL: qs.URL, User: "admin", Pass: "secret"})
 	v := v3x.New(vs.URL, "cle", "D3X/test")
 	cfg := config.Defaults()
-	e := New(func() (client.Client, *v3x.Client, *config.Config, error) { return q, v, cfg, nil })
+	e := New(oneClient(q, v, cfg))
 	if err := e.StartScan(); err != nil {
 		t.Fatal(err)
 	}
@@ -281,9 +282,9 @@ func TestLinkedApply(t *testing.T) {
 	v := v3x.New(vs.URL, "cle", "D3X/test")
 	cfg := config.Defaults()
 	cfg.Links = config.Links{On: true, Dir: "/data/liens"}
-	e := New(func() (client.Client, *v3x.Client, *config.Config, error) { return q, v, cfg, nil })
+	e := New(oneClient(q, v, cfg))
 	var made []links.Pair
-	e.SetLinker(func(_ context.Context, base string, pairs []links.Pair, remove bool) error {
+	e.SetLinker(func(_ context.Context, _ []pathmap.Rule, base string, pairs []links.Pair, remove bool) error {
 		if base != "/data/liens" || remove {
 			t.Errorf("liens : %s %v", base, remove)
 		}

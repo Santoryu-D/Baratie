@@ -48,6 +48,19 @@ func prefix(p, from, to string) (string, bool) {
 // long ; sans règle, le chemin est rendu tel quel).
 func ToClient(p string, rules []Rule) string { return apply(p, rules, true) }
 
+// Covers dit si une règle traduit p (son dossier D3X est p ou le contient).
+func Covers(p string, rules []Rule) bool {
+	for _, r := range rules {
+		if r.From == "" || r.To == "" {
+			continue
+		}
+		if _, ok := prefix(p, r.From, r.To); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // FromClient fait l'inverse.
 func FromClient(p string, rules []Rule) string { return apply(p, rules, false) }
 

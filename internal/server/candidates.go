@@ -172,11 +172,10 @@ type localPath struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// resolve : où D3X voit une release du client (ce PC, ou la seedbox quand le
-// client y tourne).
-func (s *Server) resolve(ctx context.Context, clientPath string) localPath {
+// resolve : où D3X voit une release d'un client (ce PC, ou la seedbox quand
+// le client y tourne) ; rules : la correspondance de dossiers de ce client.
+func (s *Server) resolve(ctx context.Context, rules []pathmap.Rule, clientPath string) localPath {
 	s.mu.Lock()
-	rules := s.cfg.PathMap
 	ssh := s.ssh
 	s.mu.Unlock()
 	local := pathmap.FromClient(clientPath, rules)
@@ -211,7 +210,13 @@ func (s *Server) rowsLocal(w http.ResponseWriter, r *http.Request) {
 	out := map[string]localPath{}
 	for _, row := range s.engine.Rows() {
 		if want[row.Key] && row.Path != "" {
-			out[row.Key] = s.resolve(ctx, row.Path)
+			var rules []pathmap.Rule
+			s.mu.Lock()
+			if cc := s.cfg.Client(row.Client); cc != nil {
+				rules = cc.PathMap
+			}
+			s.mu.Unlock()
+			out[row.Key] = s.resolve(ctx, rules, row.Path)
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

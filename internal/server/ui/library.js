@@ -72,7 +72,23 @@ function libFolderList() {
     ul.append(li);
   }
   ul.classList.toggle("hidden", folders.length === 0);
-  $("#lib-scan").disabled = folders.length === 0 || !(ui.state && ui.state.v3x.ok && ui.state.qbit.ok);
+  $("#lib-scan").disabled = folders.length === 0 || !(ui.state && ui.state.v3x.ok && clientsReady());
+}
+
+// Plusieurs clients : celui qui reçoit les ajouts de la médiathèque.
+function libClient() {
+  const list = (ui.state && ui.state.clients) || [];
+  const row = $("#lib-client-row");
+  row.classList.toggle("hidden", list.length < 2);
+  if (list.length < 2) return;
+  const sel = $("#lib-client");
+  if (document.activeElement === sel) return;
+  sel.replaceChildren(...list.map((c) => {
+    const o = el("option", null, c.label + (c.ok ? "" : " (injoignable)"));
+    o.value = c.id;
+    return o;
+  }));
+  sel.value = (libView.data && libView.data.client) || list[0].id;
 }
 
 async function libSaveFolders(folders) {
@@ -142,6 +158,7 @@ function libRender() {
   const d = libView.data;
   if (!d) return;
   libFolderList();
+  libClient();
   const s = d.state;
   const p = s.scan.phase;
   const running = p === "list" || p === "read" || p === "match";
@@ -160,6 +177,9 @@ function libRender() {
   const err = $("#lib-error");
   err.textContent = p === "error" ? s.scan.error : "";
   err.classList.toggle("hidden", p !== "error");
+  const warn = $("#lib-warn");
+  warn.textContent = s.scan.warn && p !== "error" ? s.scan.warn + ". Ses torrents n'ont pas pu être écartés de la recherche." : "";
+  warn.classList.toggle("hidden", !warn.textContent);
 
   // Comment D3X ajoutera.
   const how = $("#lib-how");
@@ -306,6 +326,14 @@ function bindLibrary() {
     try { await api("/ui/library/stop", {}); await libLoad(); } catch (e) { /* rien */ }
   });
   $("#lib-apply").addEventListener("click", libApply);
+  $("#lib-client").addEventListener("change", async (ev) => {
+    try {
+      libView.data = await api("/ui/library/client", { client: ev.target.value });
+      libRender();
+    } catch (e) {
+      if (e.message !== "session") toast(e.message, "bad");
+    }
+  });
   $("#lib-all").addEventListener("change", (ev) => {
     for (const r of (libView.data && libView.data.rows) || []) {
       if (r.status !== "add" || libTabOf(r.status).id !== libView.tab) continue;

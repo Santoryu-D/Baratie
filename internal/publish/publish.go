@@ -36,8 +36,8 @@ const (
 	StError      = "error"
 )
 
-// Clients fournit les clients configurés.
-type Clients func() (client.Client, *v3x.Client, *config.Config, error)
+// Clients fournit V3X, les réglages et les clients torrent joignables.
+type Clients = crossseed.Clients
 
 // File est un fichier de la release, tel que la page le voit.
 type File struct {
@@ -66,13 +66,16 @@ type Job struct {
 	InfoHash  string       `json:"infoHash,omitempty"`
 	Error     string       `json:"error,omitempty"`
 	ErrorBody string       `json:"errorBody,omitempty"`
-	// Où le client torrent voit le dossier qui contient la release.
-	ClientDir string                `json:"clientDir"`
-	MapGuess  *pathmap.Rule         `json:"mapGuess,omitempty"`
-	MapVotes  int                   `json:"mapVotes"`
-	Published *v3x.Uploaded         `json:"published,omitempty"`
-	Seed      *crossseed.WatchState `json:"seed,omitempty"`
-	SeedError string                `json:"seedError,omitempty"`
+	// Le client torrent qui seedera la release (identifiant et nom), et où
+	// il voit le dossier qui la contient.
+	Client     string                `json:"client"`
+	ClientName string                `json:"clientName"`
+	ClientDir  string                `json:"clientDir"`
+	MapGuess   *pathmap.Rule         `json:"mapGuess,omitempty"`
+	MapVotes   int                   `json:"mapVotes"`
+	Published  *v3x.Uploaded         `json:"published,omitempty"`
+	Seed       *crossseed.WatchState `json:"seed,omitempty"`
+	SeedError  string                `json:"seedError,omitempty"`
 
 	// Source des fichiers (ce PC ou la seedbox) et son nom pour la page.
 	Source string `json:"source"`
@@ -112,10 +115,11 @@ func (m *Manager) Start(src source.Source, where string) (*Job, error) {
 	if err := private(src, where); err != nil {
 		return nil, err
 	}
-	q, v, cfg, err := m.clients()
+	env, err := m.clients()
 	if err != nil {
 		return nil, err
 	}
+	v, cfg := env.V3X, env.Cfg
 	ctx0, cancel0 := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel0()
 	exclude := cfg.ExcludeList()
@@ -155,25 +159,8 @@ func (m *Manager) Start(src source.Source, where string) (*Job, error) {
 		j.Duplicate = res["0"]
 	}
 
-	// Où le client voit le dossier parent : règle enregistrée, sinon devinée
-	// d'après les torrents qu'il a déjà dans ce dossier, sinon le même chemin.
-	parent := src.Dir(plan.Root)
-	j.ClientDir = pathmap.ToClient(parent, cfg.PathMap)
-	if j.ClientDir == parent {
-		if list, err := q.List(ctx, nil); err == nil {
-			paths := make([]string, 0, len(list))
-			for _, t := range list {
-				paths = append(paths, t.ContentPath)
-			}
-			if rule, n := pathmap.SuggestNames(parent, src.Names(ctx, parent), paths); n > 0 {
-				j.MapVotes = n
-				if rule.To != "" {
-					j.MapGuess = &rule
-					j.ClientDir = rule.To
-				}
-			}
-		}
-	}
+	// Le client qui seedera, et où il voit le dossier parent.
+	j.setPlace(pick(ctx, env, src, src.Dir(plan.Root)))
 
 	m.mu.Lock()
 	m.jobs[j.ID] = j
@@ -288,33 +275,147 @@ func (m *Manager) Download(id string) (v3x.FicheDownload, bool) {
 	return v3x.FicheDownload{Name: j.Name, TotalSize: j.Total, FileCount: len(j.Files)}, true
 }
 
-// SetClientDir corrige le dossier vu par le client ; remember enregistre la
-// règle pour les prochaines publications.
-func (m *Manager) SetClientDir(id, dir string, remember bool) error {
+// SetClientDir corrige le dossier vu par le client. Renvoie la règle à
+// retenir pour les prochaines publications (nil si le chemin est le même des
+// deux côtés) et le client qu'elle concerne.
+func (m *Manager) SetClientDir(id, dir string) (*pathmap.Rule, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j := m.jobs[id]
+	if j == nil {
+		return nil, "", errors.New("publication inconnue")
+	}
+	if j.Published != nil || j.State == StPublishing {
+		return nil, "", errors.New("release déjà envoyée : son dossier ne change plus")
+	}
+	j.ClientDir = strings.TrimSpace(dir)
+	j.MapGuess = nil
+	parent := j.src.Dir(j.Path)
+	if j.ClientDir == "" || j.ClientDir == parent {
+		return nil, j.Client, nil
+	}
+	return &pathmap.Rule{From: parent, To: j.ClientDir}, j.Client, nil
+}
+
+// SetClient change le client qui seedera la release (avant l'envoi) : le
+// dossier vu par ce client est recalculé.
+func (m *Manager) SetClient(id, clientID string) error {
 	m.mu.Lock()
 	j := m.jobs[id]
 	if j == nil {
 		m.mu.Unlock()
 		return errors.New("publication inconnue")
 	}
-	j.ClientDir = strings.TrimSpace(dir)
-	parent := j.src.Dir(j.Path)
-	m.mu.Unlock()
-	if !remember || j.ClientDir == "" || j.ClientDir == parent {
-		return nil
+	if j.Published != nil || j.State == StPublishing {
+		m.mu.Unlock()
+		return errors.New("release déjà envoyée : elle reste dans son client")
 	}
-	cfg, err := config.Load()
+	src, parent := j.src, j.src.Dir(j.Path)
+	m.mu.Unlock()
+	env, err := m.clients()
 	if err != nil {
 		return err
 	}
-	rules := []pathmap.Rule{{From: parent, To: j.ClientDir}}
-	for _, r := range cfg.PathMap {
-		if r.From != parent {
-			rules = append(rules, r)
+	t := env.Get(clientID)
+	if t == nil {
+		return env.Unreachable(clientID)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var list []client.Torrent
+	if !pathmap.Covers(parent, t.PathMap) {
+		list, _ = t.Client.List(ctx, nil)
+	}
+	pl := place(*t, list, parent, src.Names(ctx, parent))
+	m.mu.Lock()
+	j.setPlace(pl)
+	m.mu.Unlock()
+	return nil
+}
+
+// placement : un client et où il voit le dossier d'une release.
+type placement struct {
+	t     crossseed.Target
+	dir   string
+	guess *pathmap.Rule
+	votes int
+}
+
+func (j *Job) setPlace(p placement) {
+	j.Client, j.ClientName, j.ClientDir, j.MapGuess, j.MapVotes = p.t.ID, p.t.Name, p.dir, p.guess, p.votes
+}
+
+// place : où le client t voit le dossier parent. Règle enregistrée, sinon
+// devinée d'après les torrents qu'il a déjà dans ce dossier (list), sinon le
+// même chemin. votes : torrents du client rangés dans ce dossier.
+func place(t crossseed.Target, list []client.Torrent, parent string, names []string) placement {
+	p := placement{t: t, dir: parent}
+	if pathmap.Covers(parent, t.PathMap) {
+		p.dir = pathmap.ToClient(parent, t.PathMap)
+		return p
+	}
+	if len(list) == 0 {
+		return p
+	}
+	paths := make([]string, 0, len(list))
+	for _, x := range list {
+		paths = append(paths, x.ContentPath)
+	}
+	if rule, n := pathmap.SuggestNames(parent, names, paths); n > 0 {
+		p.votes = n
+		if rule.To != "" {
+			p.guess = &rule
+			p.dir = rule.To
 		}
 	}
-	cfg.PathMap = rules
-	return config.Save(cfg)
+	return p
+}
+
+// pick choisit le client qui seedera une release du dossier parent : celui
+// dont la correspondance de dossiers couvre ce dossier ; sinon celui qui
+// seede déjà le plus de torrents rangés dans ce dossier ; sinon un client
+// qui tourne sur la machine des fichiers (ce PC, ou la seedbox) ; sinon le
+// premier. Le membre peut en choisir un autre avant l'envoi.
+func pick(ctx context.Context, env *crossseed.Env, src source.Source, parent string) placement {
+	for _, t := range env.Targets {
+		if pathmap.Covers(parent, t.PathMap) {
+			return place(t, nil, parent, nil)
+		}
+	}
+	lists, _ := crossseed.ListAll(ctx, env)
+	names := src.Names(ctx, parent)
+	var best *placement
+	for _, l := range lists {
+		p := place(l.Target, l.List, parent, names)
+		if p.votes > 0 && (best == nil || p.votes > best.votes) {
+			best = &p
+		}
+	}
+	if best != nil {
+		return *best
+	}
+	for _, t := range env.Targets {
+		if onMachine(src, t.Host) {
+			return place(t, nil, parent, nil)
+		}
+	}
+	return place(env.Targets[0], nil, parent, nil)
+}
+
+// onMachine : le client d'hôte host tourne-t-il là où sont les fichiers ?
+func onMachine(src source.Source, host string) bool {
+	host = strings.ToLower(strings.Trim(host, "[]"))
+	if host == "" {
+		return false
+	}
+	if src.ID() == "local" {
+		return host == "127.0.0.1" || host == "localhost" || host == "::1"
+	}
+	label := src.Label() // « user@hôte »
+	if i := strings.LastIndexByte(label, '@'); i >= 0 {
+		label = label[i+1:]
+	}
+	return strings.EqualFold(label, host)
 }
 
 // Publish envoie la release au site puis la met en seed. fields : les champs
@@ -335,16 +436,16 @@ func (m *Manager) Publish(id string, fields map[string]string) error {
 		return errors.New("cette publication n'est plus disponible")
 	}
 	j.State, j.Error, j.ErrorBody = StPublishing, "", ""
-	raw, name := j.raw, j.Name
+	raw, name, clientID := j.raw, j.Name, j.Client
 	m.mu.Unlock()
 
 	go func() {
-		q, v, cfg, err := m.clients()
+		env, err := m.clients()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		var up *v3x.Uploaded
 		if err == nil {
-			up, err = v.Upload(ctx, name+".torrent", raw, fields)
+			up, err = env.V3X.Upload(ctx, name+".torrent", raw, fields)
 		}
 		if err != nil {
 			m.mu.Lock()
@@ -365,11 +466,16 @@ func (m *Manager) Publish(id string, fields map[string]string) error {
 		m.mu.Unlock()
 		journal.Add(journal.Event{Kind: "published", Name: name, InfoHash: up.InfoHash, ID: up.ID, Detail: statusLabel(up.Status), Path: j.src.Key(j.Path)})
 
-		// Seed : le .torrent du site (avec ta passkey), sur les fichiers d'origine.
+		// Seed : le .torrent du site (avec ta passkey), sur les fichiers
+		// d'origine, dans le client choisi.
 		seedErr := ""
-		torrentRaw, err := v.OwnTorrent(ctx, up.ID)
+		torrentRaw, err := env.V3X.OwnTorrent(ctx, up.ID)
 		if err == nil {
-			_, err = m.engine.AddAndVerify(ctx, q, cfg, "pub:"+id, up.ID, torrentRaw, clientDir)
+			if t := env.Get(clientID); t == nil {
+				err = env.Unreachable(clientID)
+			} else {
+				_, err = m.engine.AddAndVerify(ctx, *t, env.Cfg, "pub:"+id, up.ID, torrentRaw, clientDir)
+			}
 			if errors.Is(err, crossseed.ErrInClient) {
 				err = nil
 			}

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -158,144 +159,183 @@ func TestDemo(t *testing.T) {
 	)
 	client[strings.ToLower(pm.InfoHash)] = &entry{Torrent: qbit.Torrent{Hash: strings.ToLower(pm.InfoHash), Name: "Deja.Seede.Pour.V3X.2020.1080p-DEMO", SavePath: "/data/v3x", ContentPath: "/data/v3x/Deja.Seede.Pour.V3X.2020.1080p-DEMO", Progress: 1, State: "stalledUP", Size: pm.Total, TotalSize: pm.Total, MagnetURI: "magnet:?xt=urn:btih:x&tr=https%3A%2F%2Fannounce.v3x.club%2Fpk%2Fannounce"}, raw: mine}
 
-	qs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
-		mu.Lock()
-		defer mu.Unlock()
-		switch r.URL.Path {
-		case "/api/v2/auth/login":
-			http.SetCookie(w, &http.Cookie{Name: "SID", Value: "x", Path: "/"})
-			io.WriteString(w, "Ok.")
-		case "/api/v2/app/version":
-			io.WriteString(w, "v5.1.0")
-		case "/api/v2/app/webapiVersion":
-			io.WriteString(w, "2.11.4")
-		case "/api/v2/torrents/info":
-			want := map[string]bool{}
-			for _, x := range strings.Split(r.Form.Get("hashes"), "|") {
-				if x != "" {
-					want[strings.ToLower(x)] = true
-				}
+	// D3X_DEMO_CLIENTS=1 : trois clients, la seedbox (première des réglages),
+	// ce PC et un NAS éteint, pour les étiquettes, les pastilles et le
+	// bandeau « injoignable ». La seedbox prend une release sur trois (jamais
+	// les « pas sur V3X », dont les fichiers sont sur ce PC), et en partage
+	// une avec ce PC.
+	multi := os.Getenv("D3X_DEMO_CLIENTS") != ""
+	box := map[string]*entry{}
+	if multi {
+		none := map[string]bool{}
+		for _, r := range rels {
+			none[r.name] = r.none
+		}
+		var hs []string
+		for h := range client {
+			hs = append(hs, h)
+		}
+		sort.Strings(hs)
+		shared := false
+		for i, h := range hs {
+			e := client[h]
+			if none[e.Name] || i%3 != 0 {
+				continue
 			}
-			out := []qbit.Torrent{}
-			for h, e := range client {
-				if len(want) > 0 && !want[h] {
-					continue
+			c := *e
+			c.SavePath, c.ContentPath = "/home/membre/torrents", "/home/membre/torrents/"+e.Name
+			box[h] = &c
+			if !shared && strings.Contains(e.Name, "1080p") {
+				shared = true
+				continue
+			}
+			delete(client, h)
+		}
+	}
+
+	serve := func(client map[string]*entry) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.ParseForm()
+			mu.Lock()
+			defer mu.Unlock()
+			switch r.URL.Path {
+			case "/api/v2/auth/login":
+				http.SetCookie(w, &http.Cookie{Name: "SID", Value: "x", Path: "/"})
+				io.WriteString(w, "Ok.")
+			case "/api/v2/app/version":
+				io.WriteString(w, "v5.1.0")
+			case "/api/v2/app/webapiVersion":
+				io.WriteString(w, "2.11.4")
+			case "/api/v2/torrents/info":
+				want := map[string]bool{}
+				for _, x := range strings.Split(r.Form.Get("hashes"), "|") {
+					if x != "" {
+						want[strings.ToLower(x)] = true
+					}
 				}
-				// Vérification simulée : 2,5 s, au temps écoulé.
-				if !e.check.IsZero() {
-					if left := time.Until(e.check); left > 0 {
-						e.State, e.Progress = "checkingUP", e.after*(1-left.Seconds()/2.5)
-					} else {
-						e.check = time.Time{}
-						e.Progress, e.State = e.after, "stoppedDL"
-						if e.after >= 1 {
-							e.State = "stoppedUP"
+				out := []qbit.Torrent{}
+				for h, e := range client {
+					if len(want) > 0 && !want[h] {
+						continue
+					}
+					// Vérification simulée : 2,5 s, au temps écoulé.
+					if !e.check.IsZero() {
+						if left := time.Until(e.check); left > 0 {
+							e.State, e.Progress = "checkingUP", e.after*(1-left.Seconds()/2.5)
+						} else {
+							e.check = time.Time{}
+							e.Progress, e.State = e.after, "stoppedDL"
+							if e.after >= 1 {
+								e.State = "stoppedUP"
+							}
+						}
+					}
+					out = append(out, e.Torrent)
+				}
+				json.NewEncoder(w).Encode(out)
+			case "/api/v2/torrents/files":
+				e := client[strings.ToLower(r.Form.Get("hash"))]
+				if e == nil {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				p, _ := torrent.Parse(e.raw)
+				type file struct {
+					Index int    `json:"index"`
+					Name  string `json:"name"`
+					Size  int64  `json:"size"`
+				}
+				out := []file{}
+				for _, f := range p.Files {
+					n := f.Path
+					if x, ok := e.names[f.Index]; ok {
+						n = x
+					}
+					out = append(out, file{f.Index, n, f.Size})
+				}
+				json.NewEncoder(w).Encode(out)
+			case "/api/v2/app/getDirectoryContent":
+				// Disque simulé : les emplacements des torrents du faux client.
+				dir := strings.TrimRight(r.Form.Get("dirPath"), "/") + "/"
+				seen := map[string]bool{}
+				out := []string{}
+				for _, e := range client {
+					if strings.HasPrefix(e.ContentPath, dir) {
+						name := strings.SplitN(e.ContentPath[len(dir):], "/", 2)[0]
+						if !seen[name] {
+							seen[name] = true
+							out = append(out, dir+name)
 						}
 					}
 				}
-				out = append(out, e.Torrent)
-			}
-			json.NewEncoder(w).Encode(out)
-		case "/api/v2/torrents/files":
-			e := client[strings.ToLower(r.Form.Get("hash"))]
-			if e == nil {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			p, _ := torrent.Parse(e.raw)
-			type file struct {
-				Index int    `json:"index"`
-				Name  string `json:"name"`
-				Size  int64  `json:"size"`
-			}
-			out := []file{}
-			for _, f := range p.Files {
-				n := f.Path
-				if x, ok := e.names[f.Index]; ok {
-					n = x
+				if len(out) == 0 {
+					w.WriteHeader(http.StatusNotFound)
+					return
 				}
-				out = append(out, file{f.Index, n, f.Size})
-			}
-			json.NewEncoder(w).Encode(out)
-		case "/api/v2/app/getDirectoryContent":
-			// Disque simulé : les emplacements des torrents du faux client.
-			dir := strings.TrimRight(r.Form.Get("dirPath"), "/") + "/"
-			seen := map[string]bool{}
-			out := []string{}
-			for _, e := range client {
-				if strings.HasPrefix(e.ContentPath, dir) {
-					name := strings.SplitN(e.ContentPath[len(dir):], "/", 2)[0]
-					if !seen[name] {
-						seen[name] = true
-						out = append(out, dir+name)
+				json.NewEncoder(w).Encode(out)
+			case "/api/v2/torrents/renameFile":
+				e := client[strings.ToLower(r.Form.Get("hash"))]
+				if e == nil {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				p, _ := torrent.Parse(e.raw)
+				if e.names == nil {
+					e.names = map[int]string{}
+				}
+				for _, f := range p.Files {
+					cur := f.Path
+					if x, ok := e.names[f.Index]; ok {
+						cur = x
+					}
+					if cur == r.Form.Get("oldPath") {
+						e.names[f.Index] = r.Form.Get("newPath")
+						if i := strings.IndexByte(r.Form.Get("newPath"), '/'); i > 0 {
+							e.ContentPath = e.SavePath + "/" + r.Form.Get("newPath")[:i]
+						}
 					}
 				}
-			}
-			if len(out) == 0 {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			json.NewEncoder(w).Encode(out)
-		case "/api/v2/torrents/renameFile":
-			e := client[strings.ToLower(r.Form.Get("hash"))]
-			if e == nil {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			p, _ := torrent.Parse(e.raw)
-			if e.names == nil {
-				e.names = map[int]string{}
-			}
-			for _, f := range p.Files {
-				cur := f.Path
-				if x, ok := e.names[f.Index]; ok {
-					cur = x
+			case "/api/v2/torrents/export":
+				time.Sleep(15 * time.Millisecond)
+				if e := client[strings.ToLower(r.Form.Get("hash"))]; e != nil {
+					w.Write(e.raw)
+					return
 				}
-				if cur == r.Form.Get("oldPath") {
-					e.names[f.Index] = r.Form.Get("newPath")
-					if i := strings.IndexByte(r.Form.Get("newPath"), '/'); i > 0 {
-						e.ContentPath = e.SavePath + "/" + r.Form.Get("newPath")[:i]
+				w.WriteHeader(http.StatusNotFound)
+			case "/api/v2/torrents/add":
+				r.ParseMultipartForm(1 << 20)
+				fh := r.MultipartForm.File["torrents"][0]
+				fd, _ := fh.Open()
+				raw, _ := io.ReadAll(fd)
+				p, _ := torrent.Parse(raw)
+				h := strings.ToLower(p.InfoHash)
+				after := 1.0
+				for _, c := range catalog {
+					if string(c.raw) == string(raw) {
+						after = c.ok
 					}
 				}
-			}
-		case "/api/v2/torrents/export":
-			time.Sleep(15 * time.Millisecond)
-			if e := client[strings.ToLower(r.Form.Get("hash"))]; e != nil {
-				w.Write(e.raw)
-				return
-			}
-			w.WriteHeader(http.StatusNotFound)
-		case "/api/v2/torrents/add":
-			r.ParseMultipartForm(1 << 20)
-			fh := r.MultipartForm.File["torrents"][0]
-			fd, _ := fh.Open()
-			raw, _ := io.ReadAll(fd)
-			p, _ := torrent.Parse(raw)
-			h := strings.ToLower(p.InfoHash)
-			after := 1.0
-			for _, c := range catalog {
-				if string(c.raw) == string(raw) {
-					after = c.ok
+				client[h] = &entry{Torrent: qbit.Torrent{Hash: h, Name: p.Name, SavePath: r.MultipartForm.Value["savepath"][0], ContentPath: r.MultipartForm.Value["savepath"][0] + "/" + p.Name, State: "stoppedDL", Size: p.Total, TotalSize: p.Total}, raw: raw, after: after}
+				io.WriteString(w, "Ok.")
+			case "/api/v2/torrents/recheck":
+				if e := client[strings.ToLower(r.Form.Get("hashes"))]; e != nil {
+					e.check = time.Now().Add(2500 * time.Millisecond)
 				}
+			case "/api/v2/torrents/delete":
+				delete(client, strings.ToLower(r.Form.Get("hashes")))
+			case "/api/v2/torrents/start":
+				if e := client[strings.ToLower(r.Form.Get("hashes"))]; e != nil {
+					e.State = "stalledUP"
+				}
+			default:
+				w.WriteHeader(http.StatusNotFound)
 			}
-			client[h] = &entry{Torrent: qbit.Torrent{Hash: h, Name: p.Name, SavePath: r.MultipartForm.Value["savepath"][0], ContentPath: r.MultipartForm.Value["savepath"][0] + "/" + p.Name, State: "stoppedDL", Size: p.Total, TotalSize: p.Total}, raw: raw, after: after}
-			io.WriteString(w, "Ok.")
-		case "/api/v2/torrents/recheck":
-			if e := client[strings.ToLower(r.Form.Get("hashes"))]; e != nil {
-				e.check = time.Now().Add(2500 * time.Millisecond)
-			}
-		case "/api/v2/torrents/delete":
-			delete(client, strings.ToLower(r.Form.Get("hashes")))
-		case "/api/v2/torrents/start":
-			if e := client[strings.ToLower(r.Form.Get("hashes"))]; e != nil {
-				e.State = "stalledUP"
-			}
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
+		})
+	}
+	qs := httptest.NewServer(serve(client))
 	defer qs.Close()
+	bs := httptest.NewServer(serve(box))
+	defer bs.Close()
 
 	dp := &demoPub{uploaded: map[string][]byte{}}
 	vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -394,7 +434,7 @@ func TestDemo(t *testing.T) {
 			_ = os.WriteFile(filepath.Join(dir, f), b, 0o644)
 		}
 	}
-	cfg.PathMap = append(cfg.PathMap, pathmap.Rule{From: seed, To: "/data/torrents"})
+	seedRule := pathmap.Rule{From: seed, To: "/data/torrents"}
 	// Médiathèque : des films rangés sous d'autres noms, et leurs releases V3X
 	// (vraies empreintes : la vérification par morceaux passe pour de bon).
 	libDir := filepath.Join(media, "Mediatheque")
@@ -433,7 +473,11 @@ func TestDemo(t *testing.T) {
 	}
 	cfg.Library = []config.LibFolder{{Path: libDir, Source: "local"}}
 	cfg.V3XBase, cfg.V3XKey = vs.URL, "demo"
-	cfg.QbitURL, cfg.QbitUser, cfg.QbitPass = qs.URL, "admin", "demo"
+	cfg.Clients = []config.ClientConfig{{ID: "c1", URL: qs.URL, User: "admin", Pass: "demo", PathMap: []pathmap.Rule{seedRule}}}
+	if multi {
+		cfg.Clients[0].Name = "PC"
+		cfg.Clients = append([]config.ClientConfig{{ID: "box", Name: "Seedbox", URL: bs.URL, User: "admin", Pass: "demo"}}, cfg.Clients[0], config.ClientConfig{ID: "nas", Name: "NAS", Kind: "transmission", URL: "http://127.0.0.1:9"})
+	}
 	// D3X_DEMO_SSH=1 : une seedbox en mémoire (mot de passe « demo »), avec
 	// ses propres releases. Il faut les agents compilés (scripts/build-agents.sh).
 	if os.Getenv("D3X_DEMO_SSH") != "" {

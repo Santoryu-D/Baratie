@@ -12,12 +12,12 @@ import (
 )
 
 // linkFiles crée (ou retire) les liens physiques d'un ajout. Les chemins
-// arrivent tels que le client les voit : D3X les fait sur ce PC quand il voit
-// le dossier des liens (même machine, ou partage avec une correspondance de
-// dossiers), sinon sur la seedbox par son agent.
-func (s *Server) linkFiles(ctx context.Context, base string, pairs []links.Pair, remove bool) error {
+// arrivent tels que le client les voit (rules : sa correspondance de
+// dossiers) : D3X les fait sur ce PC quand il voit le dossier des liens (même
+// machine, ou partage avec une correspondance de dossiers), sinon sur la
+// seedbox par son agent.
+func (s *Server) linkFiles(ctx context.Context, rules []pathmap.Rule, base string, pairs []links.Pair, remove bool) error {
 	s.mu.Lock()
-	rules := s.cfg.PathMap
 	ssh := s.ssh
 	s.mu.Unlock()
 	localBase := pathmap.FromClient(base, rules)

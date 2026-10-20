@@ -151,12 +151,7 @@ function renderState(s) {
   cv.querySelector(".txt").textContent = s.v3x.ok ? "V3X · " + s.v3x.username : s.v3x.configured ? "V3X · erreur" : "V3X · à régler";
   cv.title = s.v3x.error || "";
 
-  const cq = $("#chip-qbit");
-  cq.classList.toggle("ok", s.qbit.ok);
-  cq.classList.toggle("bad", s.qbit.configured && !s.qbit.ok);
-  const kindName = KINDS[s.qbit.kind] ? KINDS[s.qbit.kind].name : "Client";
-  cq.querySelector(".txt").textContent = s.qbit.ok ? s.qbit.version : s.qbit.configured ? kindName + " · erreur" : "Client torrent · à régler";
-  cq.title = s.qbit.error || "";
+  renderClientChips(s.clients || []);
 
   const cs = $("#chip-ssh");
   const ssh = s.ssh || {};
@@ -173,8 +168,8 @@ function renderState(s) {
   document.documentElement.dataset.mode = s.mode || "";
   $("#detect").classList.toggle("hidden", s.mode === "docker");
 
-  const ready = s.v3x.ok && s.qbit.ok;
-  $("#onboard").classList.toggle("hidden", s.v3x.configured || s.qbit.configured);
+  const ready = s.v3x.ok && clientsReady();
+  $("#onboard").classList.toggle("hidden", s.v3x.configured || (s.clients || []).length > 0);
   $("#scan").disabled = !ready;
   $("#scan").title = ready ? "" : "Règle d'abord V3X et ton client torrent";
 
@@ -214,6 +209,47 @@ function renderState(s) {
 
 let lastVersion = "";
 
+// ---------- clients torrent ----------
+
+// Plusieurs clients réglés : les lignes portent alors le nom de leur client.
+function multiClients() {
+  return ((ui.state && ui.state.clients) || []).length > 1;
+}
+
+// Au moins un client répond.
+function clientsReady() {
+  return ((ui.state && ui.state.clients) || []).some((c) => c.ok);
+}
+
+function kindName(kind) {
+  return (KINDS[kind] || KINDS.qbittorrent).name;
+}
+
+// Pastilles de la barre du haut : une par client (une seule, comme avant,
+// quand il n'y en a qu'un).
+function renderClientChips(list) {
+  const box = $("#chips-clients");
+  const chip = (cls, text, title) => {
+    const b = el("button", "chip" + (cls ? " " + cls : ""));
+    b.type = "button";
+    const dot = el("span", "dot");
+    b.append(dot, el("span", "txt", text));
+    b.title = title || "";
+    b.addEventListener("click", openSettings);
+    return b;
+  };
+  const cls = (c) => (c.ok ? "ok" : c.pending ? "" : "bad");
+  box.replaceChildren();
+  if (!list.length) {
+    box.append(chip("", "Client torrent · à régler", ""));
+  } else if (list.length === 1) {
+    const c = list[0];
+    box.append(chip(cls(c), c.ok ? c.version : kindName(c.kind) + (c.pending ? " · connexion…" : " · erreur"), c.error || ""));
+  } else {
+    for (const c of list) box.append(chip(cls(c), c.label + (c.ok ? "" : c.pending ? " · connexion…" : " · injoignable"), c.label + " : " + (c.ok ? c.version : c.error || "connexion en cours")));
+  }
+}
+
 function hourOf(iso) {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }).replace(":", " h ");
 }
@@ -235,6 +271,7 @@ function renderWatch(s) {
     bits.push(l.new ? l.new + " " + plural(l.new, "nouvelle", "nouvelles") : "rien de nouveau");
     if (l.added) bits.push(l.added + " " + plural(l.added, "ajoutée", "ajoutées"));
     if (l.danger) bits.push(l.danger + " hit and run en vue");
+    if (l.warn) bits.push(l.warn);
     parts.push("dernière à " + hourOf(l.at) + " : " + bits.join(", "));
   }
   $("#watch-txt").textContent = parts.join(". ") + ".";
@@ -278,21 +315,17 @@ function fillSettings() {
   if (!s) return;
   $("#f-key").value = "";
   $("#f-key").placeholder = s.v3x.configured ? "Clé enregistrée (laisse vide pour la garder)" : "Colle ta clé ici";
-  $("#f-kind").value = s.qbit.kind || "qbittorrent";
-  kindHint();
-  $("#f-url").value = s.qbit.url || "";
-  $("#f-user").value = s.qbit.user || "";
-  $("#f-pass").value = "";
-  $("#f-pass").placeholder = s.qbit.hasPass ? "Enregistré (laisse vide pour le garder)" : "";
-  $("#f-insecure").checked = !!s.qbit.insecure;
+  edit.clients = (s.clients || []).map((c) => ({ ...c, pass: "", name: c.name || "", url: c.url || "", user: c.user || "", pathMap: (c.pathMap || []).map((r) => ({ from: r.from || "", to: r.to || "" })), linksDir: c.linksDir || "", test: null }));
+  if (!edit.clients.length) edit.clients.push(newClient());
+  edit.open.clear();
+  $("#detected").classList.add("hidden");
+  renderClients();
   $("#f-cat").value = s.category || "";
   $("#f-tag").value = s.tag || "";
   $("#f-updates").checked = !!s.checkUpdates;
   $("#f-theme").value = (s.appearance && s.appearance.uiTheme) || "";
   buildSwatches((s.appearance && s.appearance.uiAccent) || "");
-  renderMaps(s.pathMap || []);
   $("#l-on").checked = !!(s.links && s.links.on);
-  $("#l-dir").value = (s.links && s.links.dir) || "";
   const w = s.watch || {};
   $("#w-on").checked = !!w.on;
   $("#w-min").value = String([15, 30, 60, 180].includes(w.minutes) ? w.minutes : 30);
@@ -303,47 +336,249 @@ function fillSettings() {
   $("#w-notify-row").classList.toggle("hidden", !!s.mode);
   watchHint();
   setStatus("#v3x-status", s.v3x.configured, s.v3x.ok, s.v3x.ok ? "Connecté en tant que " + s.v3x.username : s.v3x.error);
-  setStatus("#qbit-status", s.qbit.configured, s.qbit.ok, s.qbit.ok ? "Connecté à " + s.qbit.version : s.qbit.error);
   fillSSH();
 }
 
-// Dossiers du client : une ligne « ici → dans le client » par dossier.
-function mapRow(rule) {
+// Les clients en cours de réglage (rien n'est enregistré avant « Enregistrer
+// et tester ») ; open : ceux dont le formulaire est déplié.
+const edit = { clients: [], open: new Set(), seq: 0 };
+const MAX_CLIENTS = 8;
+
+function newClient(kind, url) {
+  return { id: "nouveau-" + ++edit.seq, isNew: true, name: "", kind: kind || "qbittorrent", url: url || "", user: "", pass: "", insecure: false, pathMap: [], linksDir: "", hasPass: false, test: null };
+}
+
+// Nom d'un client dans les réglages : le sien, sinon son type.
+function editName(c) {
+  return (c.name || "").trim() || kindName(c.kind);
+}
+
+// État d'un client : essai fait à l'instant, sinon dernier test enregistré.
+function editState(c) {
+  if (c.test) return c.test.ok ? ["ok", "Connecté à " + c.test.version] : ["bad", c.test.error];
+  if (c.isNew) return ["", ""];
+  if (c.pending) return ["", "Connexion en cours…"];
+  return c.ok ? ["ok", "Connecté à " + c.version] : ["bad", c.error || "injoignable"];
+}
+
+function input(id, value, placeholder, onInput, type) {
+  const n = el("input");
+  n.type = type || "text";
+  n.id = id;
+  n.autocomplete = "off";
+  n.spellcheck = false;
+  n.value = value || "";
+  if (placeholder) n.placeholder = placeholder;
+  n.addEventListener("input", () => onInput(n.value));
+  return n;
+}
+
+function labelFor(id, text) {
+  const l = el("label", null, text);
+  l.htmlFor = id;
+  return l;
+}
+
+function renderClients() {
+  const single = edit.clients.length <= 1;
+  $("#clients-legend").textContent = single ? "Client torrent" : "Clients torrent";
+  $("#clients-hint").textContent = single
+    ? "Une seedbox et ce PC ? Ajoute l'autre client : D3X les interroge tous, et ajoute chaque cross-seed au client qui a déjà les fichiers."
+    : "D3X les interroge tous et ajoute chaque cross-seed au client qui a déjà les fichiers ; s'ils sont dans plusieurs, au premier de la liste.";
+  $("#clients").replaceChildren(...edit.clients.map((c, i) => clientCard(c, i, single)));
+  clientAddButton();
+  renderLinkDirs();
+}
+
+// « Ajouter un autre client » : pas tant que le seul client est vide.
+function clientAddButton() {
+  const b = $("#client-add");
+  const single = edit.clients.length <= 1;
+  b.textContent = single ? "Ajouter un autre client" : "Ajouter un client";
+  b.disabled = edit.clients.length >= MAX_CLIENTS || (single && !(edit.clients[0] && edit.clients[0].url.trim()));
+  b.title = edit.clients.length >= MAX_CLIENTS ? MAX_CLIENTS + " clients au plus" : "";
+}
+
+function clientCard(c, i, single) {
+  const card = el("div", "client-card" + (single ? " single" : ""));
+  const open = single || edit.open.has(c.id);
+  if (!single) {
+    const [cls, text] = editState(c);
+    const head = el("div", "client-head");
+    const dot = el("span", "dot " + cls);
+    dot.setAttribute("aria-hidden", "true");
+    const title = el("div", "client-title");
+    const sub = cls === "ok" ? [c.test ? c.test.version : c.version, c.url] : [kindName(c.kind), c.url, text];
+    title.append(el("b", null, editName(c)), el("span", "sub", sub.filter(Boolean).join(" · ")));
+    title.title = text;
+    const btn = (label, aria, fn) => {
+      const b = el("button", "btn small", label);
+      b.type = "button";
+      if (aria) b.setAttribute("aria-label", aria);
+      b.addEventListener("click", fn);
+      return b;
+    };
+    head.append(dot, title);
+    if (i > 0) head.append(btn("Monter", "Monter " + editName(c) + " dans la liste", () => {
+      edit.clients.splice(i, 1);
+      edit.clients.splice(i - 1, 0, c);
+      renderClients();
+    }));
+    head.append(btn(open ? "Fermer" : "Modifier", null, () => {
+      if (open) edit.open.delete(c.id);
+      else edit.open.add(c.id);
+      renderClients();
+    }));
+    head.append(btn("Retirer", "Retirer " + editName(c), () => {
+      edit.clients = edit.clients.filter((x) => x !== c);
+      if (!edit.clients.length) edit.clients.push(newClient());
+      renderClients();
+    }));
+    card.append(head);
+  }
+  if (open) card.append(clientBody(c, i, single));
+  return card;
+}
+
+function clientBody(c, i, single) {
+  const body = el("div", "client-body");
+  const id = (k) => "c" + i + "-" + k;
+  if (!single) {
+    body.append(labelFor(id("name"), "Nom"), input(id("name"), c.name, kindName(c.kind) + " (par exemple Seedbox, PC, NAS)", (v) => {
+      c.name = v;
+      renderLinkDirs();
+    }));
+  }
+  const kind = el("select");
+  kind.id = id("kind");
+  for (const [k, v] of Object.entries(KINDS)) {
+    const o = el("option", null, v.label || v.name);
+    o.value = k;
+    kind.append(o);
+  }
+  kind.value = c.kind;
+  const hint = el("p", "hint");
+  const url = input(id("url"), c.url, "", (v) => {
+    c.url = v;
+    c.test = null;
+    clientAddButton();
+  });
+  const user = input(id("user"), c.user, "", (v) => { c.user = v; c.test = null; });
+  const pass = input(id("pass"), "", c.hasPass ? "Enregistré (laisse vide pour le garder)" : "", (v) => { c.pass = v; c.test = null; }, "password");
+  const kindHint = () => {
+    const k = KINDS[c.kind] || KINDS.qbittorrent;
+    url.placeholder = k.url;
+    hint.textContent = k.help + (ui.state && ui.state.mode === "docker" ? " Dans Docker, mets l'adresse du conteneur du client (http://qbittorrent:8080) ou celle de la machine, jamais 127.0.0.1." : "");
+    user.disabled = !k.user;
+    if (!k.user) { user.value = ""; c.user = ""; }
+  };
+  kind.addEventListener("change", () => {
+    c.kind = kind.value;
+    c.test = null;
+    kindHint();
+  });
+  kindHint();
+  const kindBox = el("div");
+  kindBox.append(labelFor(id("kind"), "Client"), kind);
+  body.append(kindBox, hint, labelFor(id("url"), "Adresse"), url);
+  const two = el("div", "two");
+  const u = el("div");
+  u.append(labelFor(id("user"), "Utilisateur"), user);
+  const pw = el("div");
+  pw.append(labelFor(id("pass"), "Mot de passe"), pass);
+  two.append(u, pw);
+  const ins = el("label", "check");
+  const cb = el("input");
+  cb.type = "checkbox";
+  cb.checked = !!c.insecure;
+  cb.addEventListener("change", () => { c.insecure = cb.checked; });
+  ins.append(cb, document.createTextNode(" Accepter un certificat non vérifié (seedbox en https auto-signé)"));
+  body.append(two, ins);
+
+  // Essai de connexion de ce client seul, sans rien enregistrer.
+  const status = el("p", "status");
+  const [cls, text] = editState(c);
+  status.className = "status" + (cls ? " " + cls : "");
+  status.textContent = text;
+  const test = el("button", "btn small", "Tester la connexion");
+  test.type = "button";
+  test.addEventListener("click", async () => {
+    if (!c.url.trim()) return toast("Indique l'adresse du client.", "bad");
+    test.disabled = true;
+    test.textContent = "Test en cours…";
+    try {
+      c.test = await api("/ui/client/test", clientPayload(c));
+    } catch (e) {
+      if (e.message === "session") return;
+      c.test = { ok: false, error: e.message };
+    }
+    renderClients();
+  });
+  const actions = el("div", "row-actions");
+  actions.append(test);
+  body.append(actions, status);
+
+  // Dossiers de ce client : une ligne « ici → dans le client » par dossier.
+  body.append(el("p", "sublegend", "Dossiers du client"), el("p", "hint", "Si ce client tourne ailleurs (NAS, Docker, seedbox), il ne nomme pas les dossiers comme cette machine. Une ligne par dossier : à gauche son chemin ici, à droite le même dossier vu par le client. D3X s'en sert pour trouver les fichiers d'une release et pour la mettre en seed."));
+  const maps = el("div", "maps");
+  const addRow = (rule) => maps.append(mapRow(c, rule));
+  for (const r of c.pathMap) addRow(r);
+  const add = el("button", "btn small", "Ajouter un dossier");
+  add.type = "button";
+  add.addEventListener("click", () => {
+    const r = { from: "", to: "" };
+    c.pathMap.push(r);
+    addRow(r);
+    maps.lastChild.querySelector("input").focus();
+  });
+  body.append(maps, add);
+  return body;
+}
+
+// Une ligne de dossiers d'un client.
+function mapRow(c, rule) {
   const row = el("div", "map-row");
-  const from = el("input");
-  from.type = "text";
-  from.spellcheck = false;
-  from.autocomplete = "off";
-  from.placeholder = ui.state && ui.state.mode ? "/media/films (ici)" : "Z:\\Films (ce PC)";
+  const from = input("", rule.from, ui.state && ui.state.mode ? "/media/films (ici)" : "Z:\\Films (ce PC)", (v) => { rule.from = v; });
+  from.removeAttribute("id");
   from.setAttribute("aria-label", "Dossier sur cette machine");
-  from.value = rule.from || "";
-  from.dataset.side = "from";
-  const to = el("input");
-  to.type = "text";
-  to.spellcheck = false;
-  to.autocomplete = "off";
-  to.placeholder = "/data/films (le client)";
+  const to = input("", rule.to, "/data/films (le client)", (v) => { rule.to = v; });
+  to.removeAttribute("id");
   to.setAttribute("aria-label", "Le même dossier vu par le client");
-  to.value = rule.to || "";
-  to.dataset.side = "to";
   const del = el("button", "btn small", "Retirer");
   del.type = "button";
   del.setAttribute("aria-label", "Retirer cette ligne");
-  del.addEventListener("click", () => row.remove());
+  del.addEventListener("click", () => {
+    c.pathMap = c.pathMap.filter((x) => x !== rule);
+    row.remove();
+  });
   row.append(from, el("span", "arrow", "→"), to, del);
   return row;
 }
 
-function renderMaps(rules) {
-  const box = $("#f-maps");
-  box.replaceChildren(...rules.map(mapRow));
+// Liens physiques : le dossier des liens de chaque client, tel qu'il le voit.
+function renderLinkDirs() {
+  const box = $("#l-dirs");
+  const single = edit.clients.length <= 1;
+  box.replaceChildren();
+  edit.clients.forEach((c, i) => {
+    const id = "l-dir-" + i;
+    box.append(labelFor(id, single ? "Dossier des liens, tel que ton client le voit" : "Dossier des liens, tel que « " + editName(c) + " » le voit"), input(id, c.linksDir, "/data/torrents/v3x-liens", (v) => { c.linksDir = v; }));
+  });
 }
 
-function collectMaps() {
-  return [...$("#f-maps").children].map((r) => ({
-    from: r.querySelector('[data-side="from"]').value.trim(),
-    to: r.querySelector('[data-side="to"]').value.trim(),
-  })).filter((r) => r.from || r.to);
+// Ce que la page envoie d'un client (identifiant vide : client neuf).
+function clientPayload(c) {
+  return {
+    id: c.isNew ? "" : c.id,
+    name: (c.name || "").trim(),
+    kind: c.kind,
+    url: c.url.trim(),
+    user: c.user.trim(),
+    pass: c.pass,
+    insecure: !!c.insecure,
+    pathMap: c.pathMap.map((r) => ({ from: r.from.trim(), to: r.to.trim() })).filter((r) => r.from || r.to),
+    linksDir: c.linksDir.trim(),
+  };
 }
 
 // ---------- seedbox (SSH) ----------
@@ -464,18 +699,13 @@ async function saveSettings(ev) {
   try {
     const s = await api("/ui/settings", {
       v3xKey: $("#f-key").value,
-      clientKind: $("#f-kind").value,
-      qbitUrl: $("#f-url").value,
-      qbitUser: $("#f-user").value,
-      qbitPass: $("#f-pass").value,
-      qbitInsecure: $("#f-insecure").checked,
+      clients: edit.clients.map(clientPayload),
       category: $("#f-cat").value,
       tag: $("#f-tag").value,
       checkUpdates: $("#f-updates").checked,
       uiTheme: $("#f-theme").value,
       uiAccent: (($("#f-accent").querySelector('[aria-checked="true"]') || {}).dataset || {}).accent || "",
-      pathMap: collectMaps(),
-      links: { on: $("#l-on").checked, dir: $("#l-dir").value.trim() },
+      links: { on: $("#l-on").checked },
       watch: {
         on: $("#w-on").checked,
         minutes: Number($("#w-min").value) || 30,
@@ -487,8 +717,9 @@ async function saveSettings(ev) {
     previewing = false;
     renderState(s);
     fillSettings();
-    if (s.v3x.ok && s.qbit.ok) {
-      toast("Réglages enregistrés, les deux connexions marchent.", "ok");
+    const cl = s.clients || [];
+    if (s.v3x.ok && cl.length && cl.every((c) => c.ok)) {
+      toast(cl.length > 1 ? "Réglages enregistrés : V3X et tes " + cl.length + " clients répondent." : "Réglages enregistrés, les deux connexions marchent.", "ok");
       $("#settings").close();
     }
   } catch (e) {
@@ -504,16 +735,8 @@ const KINDS = {
   qbittorrent: { name: "qBittorrent", url: "http://127.0.0.1:8080", user: true, help: "Outils ▸ Options ▸ Interface Web : coche « Interface Web », note le port, l'utilisateur et le mot de passe. Version 4.5 ou plus." },
   transmission: { name: "Transmission", url: "http://127.0.0.1:9091", user: true, help: "Préférences ▸ Distant : autorise l'accès distant. Utilisateur et mot de passe seulement si tu les as activés." },
   deluge: { name: "Deluge", url: "http://127.0.0.1:8112", user: false, help: "L'interface web de Deluge (greffon WebUI) : seul son mot de passe est demandé, pas d'utilisateur." },
-  rtorrent: { name: "rTorrent", url: "https://ta-seedbox/RPC2", user: true, help: "L'adresse XML-RPC de rTorrent (souvent /RPC2), avec l'identification de ta seedbox. ruTorrent n'est pas nécessaire." },
+  rtorrent: { name: "rTorrent", label: "rTorrent / ruTorrent", url: "https://ta-seedbox/RPC2", user: true, help: "L'adresse XML-RPC de rTorrent (souvent /RPC2), avec l'identification de ta seedbox. ruTorrent n'est pas nécessaire." },
 };
-
-function kindHint() {
-  const k = KINDS[$("#f-kind").value] || KINDS.qbittorrent;
-  $("#f-url").placeholder = k.url;
-  $("#client-hint").textContent = k.help + (ui.state && ui.state.mode === "docker" ? " Dans Docker, mets l'adresse du conteneur du client (http://qbittorrent:8080) ou celle de la machine, jamais 127.0.0.1." : "");
-  $("#f-user").disabled = !k.user;
-  if (!k.user) $("#f-user").value = "";
-}
 
 async function detectClients() {
   const ul = $("#detected");
@@ -528,13 +751,26 @@ async function detectClients() {
     }
     for (const f of r.found) {
       const li = el("li");
-      const b = el("button", "btn small", "Utiliser");
+      const known = edit.clients.some((c) => c.url.trim().replace(/\/+$/, "") === f.url);
+      const b = el("button", "btn small", known ? "Déjà réglé" : "Ajouter");
       b.type = "button";
+      b.disabled = known;
       b.addEventListener("click", () => {
-        $("#f-kind").value = f.kind;
-        kindHint();
-        $("#f-url").value = f.url;
+        // Le seul client encore vide est rempli ; sinon, un client de plus.
+        const only = edit.clients.length === 1 && !edit.clients[0].url.trim() ? edit.clients[0] : null;
+        if (only) {
+          only.kind = f.kind;
+          only.url = f.url;
+        } else if (edit.clients.length < MAX_CLIENTS) {
+          const c = newClient(f.kind, f.url);
+          c.name = edit.clients.some((x) => editName(x).toLowerCase() === "ce pc") ? "" : "Ce PC";
+          edit.clients.push(c);
+          edit.open.add(c.id);
+        } else {
+          return toast(MAX_CLIENTS + " clients au plus.", "bad");
+        }
         ul.classList.add("hidden");
+        renderClients();
       });
       li.append(el("span", null, f.name + " · " + f.url), b);
       ul.append(li);
@@ -554,7 +790,7 @@ function renderStatus(st) {
   const running = sc.phase === "list" || sc.phase === "read" || sc.phase === "match";
   $("#scan").classList.toggle("hidden", running || st.applying);
   $("#stop").classList.toggle("hidden", !running && !st.applying);
-  $("#scan").textContent = sc.phase === "idle" ? "Analyser mon client" : "Analyser à nouveau";
+  $("#scan").textContent = sc.phase === "idle" ? (multiClients() ? "Analyser mes clients" : "Analyser mon client") : "Analyser à nouveau";
 
   const prog = $("#progress");
   if (running || st.applying) {
@@ -565,7 +801,7 @@ function renderStatus(st) {
       label = "Ajout " + Math.min(st.batchDone + 1, st.batch) + " / " + st.batch + " : " + (st.current || "…");
       pct = st.batch ? (st.batchDone / st.batch) * 100 : 0;
     } else if (sc.phase === "list") {
-      label = "Lecture de la liste de ton client…";
+      label = multiClients() ? "Lecture de la liste de tes clients…" : "Lecture de la liste de ton client…";
     } else if (sc.phase === "read") {
       label = "Lecture des .torrent : " + sc.done + " / " + sc.total;
       pct = sc.total ? (sc.done / sc.total) * 100 : 0;
@@ -583,6 +819,10 @@ function renderStatus(st) {
   const err = $("#scan-error");
   err.textContent = sc.phase === "error" ? sc.error : "";
   err.classList.toggle("hidden", sc.phase !== "error");
+  // Un client injoignable : l'analyse a continué avec les autres.
+  const warn = $("#scan-warn");
+  warn.textContent = sc.warn && sc.phase !== "error" ? sc.warn + ". L'analyse a continué avec les autres clients." : "";
+  warn.classList.toggle("hidden", !warn.textContent);
 
   if (st.version !== ui.version) loadRows();
 }
@@ -886,8 +1126,13 @@ function rowEl(r) {
   }
   if (r.copies > 1) {
     const c = el("span", "copies", "×" + r.copies);
-    c.title = r.copies + " copies identiques dans ton client : une seule suffit pour seeder sur V3X";
+    c.title = r.copies + " copies identiques dans " + (multiClients() ? "tes clients" : "ton client") + " : une seule suffit pour seeder sur V3X";
     name.append(c);
+  }
+  if (multiClients() && r.clientName) {
+    const t = el("span", "ctag", r.clientName);
+    t.title = canAdd(r) ? "Ajoutée à ce client, qui a déjà les fichiers" : "Dans ce client";
+    name.append(t);
   }
   tdN.append(name);
   if (m && m.name !== r.name) tdN.append(el("div", "sub", "Dans ton client : " + r.name));
@@ -968,6 +1213,7 @@ function renderSelection() {
   $("#sel-size").textContent = fmtSize(size);
   const none = ui.tab === "none";
   $("#actionbar").classList.toggle("hidden", n === 0 || ui.view !== "cross" || none);
+  $("#apply").textContent = multiClients() ? "Ajouter à mes clients" : "Ajouter à mon client";
   const picked = ui.rows.filter((r) => ui.picked.has(r.key));
   const p = picked.length;
   $("#pick-count").textContent = String(p);
@@ -1096,12 +1342,15 @@ async function boot() {
   for (const b of document.querySelectorAll(".view")) b.addEventListener("click", () => setView(b.dataset.view));
   $("#settings-form").addEventListener("submit", saveSettings);
   bindSSH();
-  $("#f-kind").addEventListener("change", kindHint);
   $("#detect").addEventListener("click", detectClients);
-  $("#f-map-add").addEventListener("click", () => {
-    const row = mapRow({});
-    $("#f-maps").append(row);
-    row.querySelector("input").focus();
+  $("#client-add").addEventListener("click", () => {
+    if (edit.clients.length >= MAX_CLIENTS) return;
+    const c = newClient();
+    edit.clients.push(c);
+    edit.open.add(c.id);
+    renderClients();
+    const inp = $("#clients").lastChild.querySelector("input");
+    if (inp) inp.focus();
   });
   $("#settings-cancel").addEventListener("click", () => $("#settings").close());
   $("#f-theme").addEventListener("change", previewAppearance);

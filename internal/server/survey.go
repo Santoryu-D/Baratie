@@ -37,6 +37,7 @@ type surveyLast struct {
 	Added  int       `json:"added"` // ajoutées seules
 	Danger int       `json:"danger"`
 	Error  string    `json:"error,omitempty"`
+	Warn   string    `json:"warn,omitempty"` // clients injoignables, l'analyse a fait sans eux
 }
 
 type survey struct {
@@ -120,7 +121,9 @@ func (s *Server) surveyTick(ctx context.Context) {
 	if s.engine.Scanning() || s.Busy() {
 		return
 	}
-	if _, _, _, err := s.clients(); err != nil {
+	// Un client injoignable n'arrête pas la surveillance : l'analyse le
+	// retente, et travaille avec les autres.
+	if err := s.ready(); err != nil {
 		return
 	}
 	s.sv.mu.Lock()
@@ -143,10 +146,12 @@ func (s *Server) surveyRun(ctx context.Context, w config.Watch) surveyLast {
 	for i := 0; i < 1800 && s.engine.Scanning(); i++ {
 		time.Sleep(time.Second)
 	}
-	if st := s.engine.State(); st.Scan.Phase == "error" {
+	st := s.engine.State()
+	if st.Scan.Phase == "error" {
 		out.Error = st.Scan.Error
 		return out
 	}
+	out.Warn = st.Scan.Warn
 	s.sv.mu.Lock()
 	if s.sv.state == nil {
 		s.sv.state = loadSurvey()

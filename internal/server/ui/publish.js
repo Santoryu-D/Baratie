@@ -309,9 +309,12 @@ function renderJob() {
   const miText = { idle: "En attente.", running: "Lecture du fichier vidéo…", done: "Lu sur le plus gros fichier vidéo.", none: "Aucun fichier vidéo : pas de MediaInfo.", error: "Lecture impossible : colle-le à la main dans le NFO." }[pub.miState];
   setStep("#st-mi", { running: "run", done: "ok", error: "bad", none: "", idle: "" }[pub.miState], miText);
 
+  pubClients(j);
   let mapText;
-  if (j.mapGuess) mapText = "Ton client verra ce dossier comme « " + j.clientDir + " » (déduit de " + j.mapVotes + " torrent" + (j.mapVotes > 1 ? "s" : "") + " de ton client). ";
-  else mapText = "Ton client cherchera les fichiers dans « " + j.clientDir + " ». ";
+  const multi = multiClients();
+  const who = multi ? "« " + j.clientName + " »" : "Ton client";
+  if (j.mapGuess) mapText = who + " verra ce dossier comme « " + j.clientDir + " » (déduit de " + j.mapVotes + " torrent" + (j.mapVotes > 1 ? "s" : "") + " de " + (multi ? "ce client" : "ton client") + "). ";
+  else mapText = who + " cherchera les fichiers dans « " + j.clientDir + " ». ";
   setStep("#st-map", j.mapGuess || j.mapVotes ? "ok" : "", mapText);
   const fix = el("button", "link", "Corriger");
   fix.type = "button";
@@ -324,6 +327,43 @@ function renderJob() {
   // Publication terminée.
   if (j.published) renderDone();
   renderBar();
+}
+
+// Plusieurs clients : celui qui seedera la release, au choix jusqu'à l'envoi.
+function pubClients(j) {
+  const list = (ui.state && ui.state.clients) || [];
+  const row = $("#pub-client-row");
+  const show = list.length > 1 && !j.published && j.state !== "publishing";
+  row.classList.toggle("hidden", !show);
+  if (!show) return;
+  const sel = $("#pub-client");
+  if (document.activeElement === sel) return;
+  const key = list.map((c) => c.id + (c.ok ? "+" : "-")).join(",");
+  if (sel.dataset.key !== key) {
+    sel.dataset.key = key;
+    sel.replaceChildren(...list.map((c) => {
+      const o = el("option", null, c.label + (c.ok ? "" : " (injoignable)"));
+      o.value = c.id;
+      o.disabled = !c.ok;
+      return o;
+    }));
+  }
+  sel.value = j.client;
+}
+
+async function pickClient(ev) {
+  const sel = ev.target;
+  sel.disabled = true;
+  try {
+    pub.job = await api("/ui/pub/" + pub.job.id + "/client", { client: sel.value });
+    $("#map-edit").classList.add("hidden");
+    renderJob();
+  } catch (e) {
+    if (e.message !== "session") toast(e.message, "bad");
+    if (pub.job) sel.value = pub.job.client;
+  } finally {
+    sel.disabled = false;
+  }
 }
 
 async function saveMap() {
@@ -705,7 +745,7 @@ function askPublish() {
       : ["Œuvre", pub.tmdb ? pub.tmdb.title + (pub.tmdb.year ? " (" + pub.tmdb.year + ")" : "") : "aucune"],
     ["Taille", fmtSize(pub.job.total)],
     ["Visibilité", f.anonymous === "true" ? "anonyme" : "sous ton pseudo"],
-    ["Seed", "ajoutée à ton client dans « " + pub.job.clientDir + " »"],
+    ["Seed", "ajoutée à " + (multiClients() ? "« " + pub.job.clientName + " »" : "ton client") + " dans « " + pub.job.clientDir + " »"],
   ];
   for (const [k, v] of rows) dl.append(el("dt", null, k), el("dd", null, v));
   $("#f-rights").checked = false;
@@ -842,6 +882,7 @@ function bindPublish() {
   $("#fs-path").addEventListener("keydown", (e) => { if (e.key === "Enter") browse($("#fs-path").value); });
   $("#job-cancel").addEventListener("click", cancelJob);
   $("#map-save").addEventListener("click", saveMap);
+  $("#pub-client").addEventListener("change", pickClient);
   $("#tmdb-go").addEventListener("click", searchTmdb);
   $("#tmdb-q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchTmdb(); });
   $("#f-notmdb").addEventListener("change", () => { if ($("#f-notmdb").checked) { pub.tmdb = null; $("#tmdb-picked").classList.add("hidden"); loadFicheSoon(); } renderBar(); });

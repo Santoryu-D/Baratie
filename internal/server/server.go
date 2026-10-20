@@ -53,18 +53,16 @@ type Server struct {
 	Port    int
 	opts    Options
 
-	mu      sync.Mutex
-	cfg     *config.Config
-	q       client.Client
-	v       *v3x.Client
-	me      *v3x.Me
-	qbitVer string
-	qbitErr string
-	v3xErr  string
-	update  *Update
-	engine  *crossseed.Engine
-	pub     *publish.Manager
-	mux     *http.ServeMux
+	mu     sync.Mutex
+	cfg    *config.Config
+	conns  map[string]*clientConn // clients torrent, par identifiant
+	v      *v3x.Client
+	me     *v3x.Me
+	v3xErr string
+	update *Update
+	engine *crossseed.Engine
+	pub    *publish.Manager
+	mux    *http.ServeMux
 
 	// Présence de la page : dernière requête de la page, et son « au revoir »
 	// (fermeture de la fenêtre). En nanosecondes Unix.
@@ -119,9 +117,10 @@ func New(version string, cfg *config.Config, token string, port int) *Server {
 // NewWith prépare le serveur avec des options.
 func NewWith(version string, cfg *config.Config, token string, port int, opts Options) *Server {
 	s := &Server{Version: version, Token: token, Port: port, opts: opts, cfg: cfg, mux: http.NewServeMux(), restart: make(chan struct{})}
-	s.engine = crossseed.New(s.clients)
+	s.engine = crossseed.New(s.env)
+	s.engine.SetRefresh(s.retryClients)
 	s.mb = musicbrainz.New(version)
-	s.pub = publish.New(publish.Clients(s.clients), s.engine, version)
+	s.pub = publish.New(s.env, s.engine, version)
 	sub, _ := fs.Sub(uiFS, "ui")
 	s.mux.Handle("GET /", http.FileServer(http.FS(sub)))
 	s.mux.HandleFunc("GET /auth", s.auth)
@@ -140,6 +139,7 @@ func NewWith(version string, cfg *config.Config, token string, port int, opts Op
 	s.mux.HandleFunc("GET /ui/client/detect", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"found": client.Detect()})
 	})
+	s.mux.HandleFunc("POST /ui/client/test", s.clientTest)
 	s.routesPublish()
 	s.routesBatch()
 	s.routesSSH()
@@ -243,21 +243,8 @@ func fail(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 
-// clients fournit au moteur les clients connectés.
-func (s *Server) clients() (client.Client, *v3x.Client, *config.Config, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.v == nil || s.me == nil {
-		return nil, nil, nil, errors.New("D3X n'est pas connecté à V3X : vérifie ta clé API dans les réglages")
-	}
-	if s.q == nil || s.qbitVer == "" {
-		return nil, nil, nil, errors.New("D3X n'est pas connecté à ton client torrent : vérifie les réglages")
-	}
-	c := *s.cfg
-	return s.q, s.v, &c, nil
-}
-
-// connect (re)crée les clients et vérifie les deux connexions.
+// connect (re)crée les clients et vérifie les connexions : V3X et chaque
+// client torrent, tous en même temps.
 func (s *Server) connect() {
 	s.mu.Lock()
 	cfg := *s.cfg
@@ -266,14 +253,16 @@ func (s *Server) connect() {
 	defer cancel()
 
 	var (
-		v       *v3x.Client
-		me      *v3x.Me
-		v3xErr  string
-		q       client.Client
-		qbitVer string
-		qbitErr string
+		v      *v3x.Client
+		me     *v3x.Me
+		v3xErr string
+		done   = make(chan struct{})
 	)
-	if cfg.V3XKey != "" {
+	go func() {
+		defer close(done)
+		if cfg.V3XKey == "" {
+			return
+		}
 		v = v3x.New(cfg.V3XBase, cfg.V3XKey, "D3X/"+s.Version)
 		m, err := v.Me(ctx)
 		if err != nil {
@@ -281,20 +270,12 @@ func (s *Server) connect() {
 		} else {
 			me = m
 		}
-	}
-	if cfg.QbitURL != "" {
-		c, err := client.New(client.Options{Kind: cfg.ClientKind, URL: cfg.QbitURL, User: cfg.QbitUser, Pass: cfg.QbitPass, Insecure: cfg.QbitInsecure})
-		if err != nil {
-			qbitErr = err.Error()
-		} else if ver, err := c.Version(ctx); err != nil {
-			qbitErr = err.Error()
-		} else {
-			q, qbitVer = c, strings.TrimSpace(c.Kind()+" "+ver)
-		}
-	}
+	}()
+	conns := dialAll(ctx, cfg.Clients)
+	<-done
 	s.mu.Lock()
 	s.v, s.me, s.v3xErr = v, me, v3xErr
-	s.q, s.qbitVer, s.qbitErr = q, qbitVer, qbitErr
+	s.conns = conns
 	s.mu.Unlock()
 }
 
@@ -310,27 +291,19 @@ type stateOut struct {
 		Ratio      *float64 `json:"ratio,omitempty"`
 		HitAndRun  int      `json:"hitAndRun"`
 	} `json:"v3x"`
-	Qbit struct {
-		Kind       string `json:"kind"`
-		Configured bool   `json:"configured"`
-		OK         bool   `json:"ok"`
-		Error      string `json:"error,omitempty"`
-		Version    string `json:"version,omitempty"`
-		URL        string `json:"url,omitempty"`
-		User       string `json:"user,omitempty"`
-		Insecure   bool   `json:"insecure"`
-		HasPass    bool   `json:"hasPass"`
-	} `json:"qbit"`
-	Category     string `json:"category"`
-	Tag          string `json:"tag"`
-	CheckUpdates bool   `json:"checkUpdates"`
-	LastDir      string `json:"lastDir,omitempty"`
-	// PathMap : où D3X voit les dossiers du client (« Z:\data » ici,
-	// « /data » dans le client).
-	PathMap []pathmap.Rule `json:"pathMap"`
-	Watch   surveyOut      `json:"watch"`
-	Links   config.Links   `json:"links"`
-	SSH     struct {
+	// Clients : les clients torrent, dans l'ordre des réglages, chacun avec
+	// son état et ses dossiers (où D3X les voit : « Z:\data » ici, « /data »
+	// dans le client).
+	Clients      []clientOut `json:"clients"`
+	Category     string      `json:"category"`
+	Tag          string      `json:"tag"`
+	CheckUpdates bool        `json:"checkUpdates"`
+	LastDir      string      `json:"lastDir,omitempty"`
+	Watch        surveyOut   `json:"watch"`
+	Links        struct {
+		On bool `json:"on"`
+	} `json:"links"`
+	SSH struct {
 		Configured bool   `json:"configured"`
 		OK         bool   `json:"ok"`
 		Label      string `json:"label,omitempty"`
@@ -368,23 +341,11 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	if s.me != nil {
 		o.V3X.Username, o.V3X.Ratio, o.V3X.HitAndRun = s.me.Username, s.me.Ratio, s.me.HitAndRun
 	}
-	o.Qbit.Kind = s.cfg.ClientKind
-	if o.Qbit.Kind == "" {
-		o.Qbit.Kind = "qbittorrent"
-	}
-	o.Qbit.Configured = s.cfg.QbitURL != ""
-	o.Qbit.OK = s.qbitVer != ""
-	o.Qbit.Error = s.qbitErr
-	o.Qbit.Version = s.qbitVer
-	o.Qbit.URL = maskURL(s.cfg.QbitURL)
-	o.Qbit.User = s.cfg.QbitUser
-	o.Qbit.Insecure = s.cfg.QbitInsecure
-	o.Qbit.HasPass = s.cfg.QbitPass != ""
+	o.Clients = s.clientsOut()
 	o.Category, o.Tag, o.CheckUpdates = s.cfg.Category, s.cfg.Tag, s.cfg.CheckUpdates
 	o.LastDir = s.cfg.LastDir
-	o.PathMap = append([]pathmap.Rule{}, s.cfg.PathMap...)
 	o.Watch = s.surveyState(s.cfg.Watch)
-	o.Links = s.cfg.Links
+	o.Links.On = s.cfg.Links.On
 	if s.opts.Remote {
 		o.Mode = "server"
 		if s.opts.Managed == "docker" {
@@ -420,18 +381,13 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		V3XKey       string `json:"v3xKey"`
-		ClientKind   string `json:"clientKind"`
-		QbitURL      string `json:"qbitUrl"`
-		QbitUser     string `json:"qbitUser"`
-		QbitPass     string `json:"qbitPass"`
-		QbitInsecure bool   `json:"qbitInsecure"`
 		Category     string `json:"category"`
 		Tag          string `json:"tag"`
 		CheckUpdates bool   `json:"checkUpdates"`
 		UITheme      string `json:"uiTheme"`
 		UIAccent     string `json:"uiAccent"`
-		// PathMap : absent = inchangé.
-		PathMap *[]pathmap.Rule `json:"pathMap"`
+		// Clients : la liste complète, dans l'ordre ; absente = inchangée.
+		Clients *[]clientIn `json:"clients"`
 		// Watch : absent = inchangé.
 		Watch *struct {
 			On        bool  `json:"on"`
@@ -440,9 +396,13 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 			AutoAdd   bool  `json:"autoAdd"`
 			Autostart *bool `json:"autostart"`
 		} `json:"watch"`
-		Links *config.Links `json:"links"`
+		// Links : absent = inchangé ; le dossier des liens est celui de
+		// chaque client.
+		Links *struct {
+			On bool `json:"on"`
+		} `json:"links"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&in); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<18)).Decode(&in); err != nil {
 		fail(w, http.StatusBadRequest, errors.New("réglages illisibles"))
 		return
 	}
@@ -456,21 +416,14 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	if k := strings.TrimSpace(in.V3XKey); k != "" {
 		c.V3XKey = k
 	}
-	newURL := strings.TrimSpace(in.QbitURL)
-	// Adresse renvoyée masquée (« user:***@ ») : inchangée, on garde la vraie.
-	if newURL == maskURL(c.QbitURL) {
-		newURL = c.QbitURL
-	}
-	if in.QbitPass != "" {
-		c.QbitPass = in.QbitPass
-	} else if newURL != c.QbitURL || strings.TrimSpace(in.QbitUser) != c.QbitUser || in.ClientKind != c.ClientKind {
-		// Autre client : l'ancien mot de passe ne le concerne pas.
-		c.QbitPass = ""
-	}
-	c.QbitURL, c.QbitUser, c.QbitInsecure = newURL, strings.TrimSpace(in.QbitUser), in.QbitInsecure
-	c.ClientKind = in.ClientKind
-	if c.ClientKind == "qbittorrent" {
-		c.ClientKind = ""
+	if in.Clients != nil {
+		list, err := mergeClients(c.Clients, *in.Clients)
+		if err != nil {
+			s.mu.Unlock()
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		c.Clients = list
 	}
 	c.Category = strings.TrimSpace(in.Category)
 	c.Tag = strings.TrimSpace(in.Tag)
@@ -482,23 +435,17 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	if accents[in.UIAccent] {
 		c.UIAccent = in.UIAccent
 	}
-	if in.PathMap != nil {
-		rules, err := cleanRules(*in.PathMap)
-		if err != nil {
-			s.mu.Unlock()
-			fail(w, http.StatusBadRequest, err)
-			return
-		}
-		c.PathMap = rules
-	}
 	if in.Links != nil {
-		in.Links.Dir = strings.TrimSpace(in.Links.Dir)
-		if in.Links.On && in.Links.Dir == "" {
+		dir := false
+		for _, cc := range c.Clients {
+			dir = dir || cc.LinksDir != ""
+		}
+		if in.Links.On && !dir {
 			s.mu.Unlock()
 			fail(w, http.StatusBadRequest, errors.New("liens physiques : indique le dossier des liens, tel que ton client le voit"))
 			return
 		}
-		c.Links = *in.Links
+		c.Links.On = in.Links.On
 	}
 	restartWatch := false
 	if in.Watch != nil {
@@ -531,7 +478,7 @@ func (s *Server) reconnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
-	if _, _, _, err := s.clients(); err != nil {
+	if err := s.ready(); err != nil {
 		fail(w, http.StatusBadRequest, err)
 		return
 	}

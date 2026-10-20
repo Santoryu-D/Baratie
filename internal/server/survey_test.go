@@ -142,11 +142,11 @@ func TestSurveyAutoAdd(t *testing.T) {
 
 	cfg := config.Defaults()
 	cfg.V3XBase, cfg.V3XKey = vs.URL, "cle"
-	cfg.QbitURL, cfg.QbitUser, cfg.QbitPass = qs.URL, "admin", "x"
+	cfg.Clients = []config.ClientConfig{{ID: "c1", URL: qs.URL, User: "admin", Pass: "x"}}
 	cfg.Watch = config.Watch{On: true, AutoAdd: true}
 	s := New("test", cfg, "jeton", 0)
 	for i := 0; i < 50; i++ {
-		if _, _, _, err := s.clients(); err == nil {
+		if _, err := s.env(); err == nil {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)

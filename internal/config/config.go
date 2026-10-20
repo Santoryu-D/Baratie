@@ -5,10 +5,14 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/V3x0rV3x/D3X/internal/pathmap"
@@ -19,8 +23,13 @@ type Config struct {
 	V3XBase string `json:"v3xBase,omitempty"` // vide = https://api.v3x.club
 	V3XKey  string `json:"v3xKey"`
 
-	// Client torrent : qbittorrent (défaut), transmission, deluge, rtorrent.
-	// Les champs gardent leur nom « qbit » pour relire les anciens réglages.
+	// Clients torrent, dans l'ordre choisi par le membre : le premier qui a
+	// les fichiers d'une release reçoit son cross-seed.
+	Clients []ClientConfig `json:"clients,omitempty"`
+
+	// Anciens réglages d'un seul client (D3X 1.0) : relus une fois pour
+	// former la liste, puis tenus égaux au premier client à chaque
+	// enregistrement, pour qu'un retour en 1.0 retrouve son client.
 	ClientKind   string `json:"clientKind,omitempty"`
 	QbitURL      string `json:"qbitUrl"`
 	QbitUser     string `json:"qbitUser"`
@@ -38,7 +47,8 @@ type Config struct {
 	// nil = motifs par défaut ; liste vide = rien d'écarté (hors fichiers cachés).
 	Exclude []string `json:"exclude,omitempty"`
 
-	// Correspondance des chemins entre D3X et le client torrent.
+	// Correspondance des chemins du premier client (D3X 1.0) : chaque client
+	// a désormais la sienne, celle-ci n'est plus qu'un reflet.
 	PathMap []pathmap.Rule `json:"pathMap,omitempty"`
 
 	// Dernier dossier ouvert dans le sélecteur.
@@ -61,6 +71,86 @@ type Config struct {
 
 	// Médiathèque : dossiers où chercher des releases V3X (films et séries rangés).
 	Library []LibFolder `json:"library,omitempty"`
+	// LibraryClient : le client qui reçoit les ajouts de la médiathèque
+	// (identifiant ; vide ou inconnu = le premier).
+	LibraryClient string `json:"libraryClient,omitempty"`
+}
+
+// MaxClients : clients torrent au plus.
+const MaxClients = 8
+
+// ClientConfig : un client torrent et sa façon de voir les dossiers.
+type ClientConfig struct {
+	// ID : identifiant stable (les ajouts en cours et la médiathèque s'y
+	// réfèrent), jamais montré au membre.
+	ID string `json:"id"`
+	// Name : le nom choisi par le membre (« Seedbox », « PC »).
+	Name string `json:"name,omitempty"`
+	// Kind : qbittorrent (défaut), transmission, deluge, rtorrent.
+	Kind     string `json:"kind,omitempty"`
+	URL      string `json:"url"`
+	User     string `json:"user,omitempty"`
+	Pass     string `json:"pass,omitempty"`
+	Insecure bool   `json:"insecure,omitempty"`
+	// PathMap : où D3X voit les dossiers de CE client.
+	PathMap []pathmap.Rule `json:"pathMap,omitempty"`
+	// LinksDir : le dossier des liens physiques, tel que ce client le voit.
+	LinksDir string `json:"linksDir,omitempty"`
+}
+
+// NewClientID tire l'identifiant d'un nouveau client.
+func NewClientID() string {
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+// Client renvoie le client d'identifiant id (nil s'il n'existe pas).
+func (c *Config) Client(id string) *ClientConfig {
+	for i := range c.Clients {
+		if c.Clients[i].ID == id {
+			return &c.Clients[i]
+		}
+	}
+	return nil
+}
+
+// migrate forme la liste des clients d'une configuration de D3X 1.0 (un seul
+// client, champs « qbit ») sans rien perdre, et donne un identifiant à chaque
+// client qui n'en a pas. Toujours le même résultat pour le même fichier :
+// deux lectures donnent les mêmes identifiants.
+func (c *Config) migrate() {
+	if len(c.Clients) == 0 && strings.TrimSpace(c.QbitURL) != "" {
+		c.Clients = []ClientConfig{{
+			ID: "c1", Kind: c.ClientKind, URL: c.QbitURL, User: c.QbitUser, Pass: c.QbitPass, Insecure: c.QbitInsecure,
+			PathMap: c.PathMap, LinksDir: c.Links.Dir,
+		}}
+	}
+	seen := map[string]bool{}
+	for i := range c.Clients {
+		id := c.Clients[i].ID
+		for n := i + 1; id == "" || seen[id]; n++ {
+			id = "c" + strconv.Itoa(n)
+		}
+		c.Clients[i].ID = id
+		seen[id] = true
+	}
+}
+
+// mirror tient les anciens champs égaux au premier client (rien s'il n'y en
+// a plus : un client retiré ne doit pas revenir à la lecture suivante).
+func (c *Config) mirror() {
+	if len(c.Clients) == 0 {
+		c.ClientKind, c.QbitURL, c.QbitUser, c.QbitPass, c.QbitInsecure = "", "", "", "", false
+		c.PathMap = nil
+		return
+	}
+	f := c.Clients[0]
+	c.ClientKind, c.QbitURL, c.QbitUser, c.QbitPass, c.QbitInsecure = f.Kind, f.URL, f.User, f.Pass, f.Insecure
+	c.PathMap = f.PathMap
+	c.Links.Dir = f.LinksDir
 }
 
 // LibFolder : un dossier de la médiathèque, sur ce PC (local) ou sur la
@@ -153,14 +243,32 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return c, json.Unmarshal(b, c)
+	return c, Parse(b, c)
+}
+
+// Parse lit un config.json sur c (déjà rempli des réglages par défaut) et
+// forme la liste des clients d'une configuration ancienne.
+func Parse(b []byte, c *Config) error {
+	if err := json.Unmarshal(b, c); err != nil {
+		return err
+	}
+	c.migrate()
+	return nil
+}
+
+// Marshal : le config.json d'une configuration, anciens champs tenus égaux au
+// premier client. c n'est pas modifié.
+func Marshal(c *Config) ([]byte, error) {
+	cp := *c
+	cp.mirror()
+	return json.MarshalIndent(&cp, "", "  ")
 }
 
 // Save enregistre la configuration.
 func Save(c *Config) error {
 	mu.Lock()
 	defer mu.Unlock()
-	b, err := json.MarshalIndent(c, "", "  ")
+	b, err := Marshal(c)
 	if err != nil {
 		return err
 	}

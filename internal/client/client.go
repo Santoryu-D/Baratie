@@ -77,6 +77,22 @@ var (
 // Kinds : les clients pris en charge, pour les réglages.
 var Kinds = []string{"qbittorrent", "transmission", "deluge", "rtorrent"}
 
+// KindName : le nom affiché d'un type de client (vide = qBittorrent), vide
+// s'il est inconnu.
+func KindName(kind string) string {
+	switch kind {
+	case "", "qbittorrent":
+		return "qBittorrent"
+	case "transmission":
+		return "Transmission"
+	case "deluge":
+		return "Deluge"
+	case "rtorrent":
+		return "rTorrent"
+	}
+	return ""
+}
+
 // Options : connexion à un client.
 type Options struct {
 	Kind     string

@@ -45,3 +45,18 @@ func TestSuggest(t *testing.T) {
 		t.Fatalf("même machine : %+v (%d)", r, n)
 	}
 }
+
+func TestCovers(t *testing.T) {
+	rules := []Rule{{From: `\\NAS\data`, To: "/data"}, {From: "/home/moi", To: ""}}
+	for p, want := range map[string]bool{
+		`\\NAS\data\films`: true,
+		`\\nas\DATA`:       true,
+		`\\NAS\database`:   false, // pas à une frontière de dossier
+		"/home/moi/x":      false, // règle à moitié remplie
+		`D:\Films`:         false,
+	} {
+		if got := Covers(p, rules); got != want {
+			t.Errorf("Covers(%q) = %v, attendu %v", p, got, want)
+		}
+	}
+}

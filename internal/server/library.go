@@ -25,6 +25,7 @@ func (s *Server) routesLibrary() {
 		writeJSON(w, http.StatusOK, s.engine.Library())
 	})
 	s.mux.HandleFunc("POST /ui/library/apply", s.libraryApply)
+	s.mux.HandleFunc("POST /ui/library/client", s.libraryClient)
 }
 
 // libIO : les fichiers de la médiathèque sur ce PC ou sur la seedbox.
@@ -58,28 +59,64 @@ func (l libIO) ReadAt(ctx context.Context, src, path string, off, n int64) ([]by
 }
 
 // ClientPath : sur la seedbox, le client voit les mêmes chemins ; sur ce PC,
-// par les dossiers du client.
-func (l libIO) ClientPath(src, path string) string {
+// par les dossiers du client qui reçoit l'ajout.
+func (l libIO) ClientPath(src, path string, rules []pathmap.Rule) string {
 	if src == "ssh" {
 		return path
 	}
-	l.s.mu.Lock()
-	rules := l.s.cfg.PathMap
-	l.s.mu.Unlock()
 	return pathmap.ToClient(path, rules)
+}
+
+// libTarget : le client qui reçoit les ajouts de la médiathèque (le premier
+// si aucun n'est choisi ou si le choix n'existe plus ; verrou tenu).
+func (s *Server) libTarget() *config.ClientConfig {
+	if cc := s.cfg.Client(s.cfg.LibraryClient); cc != nil {
+		return cc
+	}
+	if len(s.cfg.Clients) > 0 {
+		return &s.cfg.Clients[0]
+	}
+	return nil
 }
 
 func (s *Server) libraryGet(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	folders := append([]config.LibFolder{}, s.cfg.Library...)
-	links := s.cfg.Links
+	on, target := s.cfg.Links.On, ""
+	links := false
+	if cc := s.libTarget(); cc != nil {
+		target, links = cc.ID, on && strings.TrimSpace(cc.LinksDir) != ""
+	}
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"state":   s.engine.Library(),
 		"rows":    s.engine.LibraryRows(),
 		"folders": folders,
-		"links":   links.On && links.Dir != "",
+		"links":   links,
+		"client":  target,
 	})
+}
+
+// libraryClient : le client qui reçoit les ajouts de la médiathèque.
+func (s *Server) libraryClient(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Client string `json:"client"`
+	}
+	if !decode(w, r, 1<<12, &in) {
+		return
+	}
+	s.mu.Lock()
+	known := s.cfg.Client(in.Client) != nil
+	s.mu.Unlock()
+	if !known {
+		fail(w, http.StatusBadRequest, errors.New("client inconnu"))
+		return
+	}
+	if err := s.updateConfig(func(c *config.Config) { c.LibraryClient = in.Client }); err != nil {
+		fail(w, http.StatusInternalServerError, errors.New("choix non enregistré : "+err.Error()))
+		return
+	}
+	s.libraryGet(w, r)
 }
 
 func (s *Server) libraryFolders(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +157,7 @@ func (s *Server) libraryFolders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) libraryScan(w http.ResponseWriter, r *http.Request) {
-	if _, _, _, err := s.clients(); err != nil {
+	if err := s.ready(); err != nil {
 		fail(w, http.StatusBadRequest, err)
 		return
 	}

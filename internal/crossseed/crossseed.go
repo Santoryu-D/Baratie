@@ -25,6 +25,7 @@ import (
 	"github.com/V3x0rV3x/D3X/internal/client"
 	"github.com/V3x0rV3x/D3X/internal/config"
 	"github.com/V3x0rV3x/D3X/internal/links"
+	"github.com/V3x0rV3x/D3X/internal/pathmap"
 	"github.com/V3x0rV3x/D3X/internal/torrent"
 	"github.com/V3x0rV3x/D3X/internal/v3x"
 )
@@ -86,23 +87,33 @@ type Row struct {
 	CanAdd bool `json:"canAdd,omitempty"`
 	// Path : l'emplacement de la copie, vu par le client.
 	Path string `json:"path,omitempty"`
+	// Client : le client qui a cette copie (identifiant), et son nom.
+	Client     string `json:"client,omitempty"`
+	ClientName string `json:"clientName,omitempty"`
 
+	hash        string // info-hash de la copie dans son client
 	contentPath string
 	sig         *Sig
 }
 
 // Progress décrit l'analyse en cours.
 type Progress struct {
-	Phase  string    `json:"phase"` // idle, list, read, match, done, error
-	Done   int       `json:"done"`
-	Total  int       `json:"total"`
-	Detail string    `json:"detail,omitempty"`
-	Error  string    `json:"error,omitempty"`
-	At     time.Time `json:"at,omitempty"`
+	Phase  string `json:"phase"` // idle, list, read, match, done, error
+	Done   int    `json:"done"`
+	Total  int    `json:"total"`
+	Detail string `json:"detail,omitempty"`
+	Error  string `json:"error,omitempty"`
+	// Warn : les clients injoignables pendant l'analyse, qui a continué avec
+	// les autres (« Seedbox injoignable : … »).
+	Warn string    `json:"warn,omitempty"`
+	At   time.Time `json:"at,omitempty"`
 }
 
 // watch est un ajout que D3X surveille jusqu'à la fin de la vérification.
 type watch struct {
+	// Client : l'identifiant du client où l'ajout a été fait (vide : le
+	// premier, ajout lancé par une version qui n'en connaissait qu'un).
+	Client      string    `json:"client,omitempty"`
 	Key         string    `json:"key"`
 	Name        string    `json:"name"`
 	ID          string    `json:"id"`
@@ -113,9 +124,6 @@ type watch struct {
 	Progress    float64   `json:"progress"`
 	Detail      string    `json:"detail,omitempty"`
 }
-
-// Clients fournit les clients configurés (ils changent avec les réglages).
-type Clients func() (client.Client, *v3x.Client, *config.Config, error)
 
 // Engine garde l'état du cross-seed pour la page.
 type Engine struct {
@@ -132,6 +140,7 @@ type Engine struct {
 	cancel   context.CancelFunc
 	applying bool
 	linker   Linker
+	refresh  Refresh
 	lib      library
 	batch    int // releases du lot d'ajout en cours
 	batchOK  int // déjà traitées
@@ -148,8 +157,8 @@ func New(c Clients) *Engine {
 func (e *Engine) touch() { e.version++ }
 
 // Linker crée (remove=false) ou retire des liens physiques ; chemins vus par
-// le client torrent.
-type Linker func(ctx context.Context, base string, pairs []links.Pair, remove bool) error
+// le client torrent, dont rules est la correspondance de dossiers.
+type Linker func(ctx context.Context, rules []pathmap.Rule, base string, pairs []links.Pair, remove bool) error
 
 // SetLinker branche la création des liens physiques (ce PC ou la seedbox).
 func (e *Engine) SetLinker(l Linker) {
@@ -158,9 +167,10 @@ func (e *Engine) SetLinker(l Linker) {
 	e.mu.Unlock()
 }
 
-// linkerFor : le créateur de liens, si le membre a choisi ce repli.
-func (e *Engine) linkerFor(cfg *config.Config) Linker {
-	if cfg == nil || !cfg.Links.On || strings.TrimSpace(cfg.Links.Dir) == "" {
+// linkerFor : le créateur de liens, si le membre a choisi ce repli et donné
+// le dossier des liens de ce client.
+func (e *Engine) linkerFor(cfg *config.Config, t Target) Linker {
+	if cfg == nil || !cfg.Links.On || strings.TrimSpace(t.LinksDir) == "" {
 		return nil
 	}
 	e.mu.Lock()
@@ -234,65 +244,94 @@ func normPath(p string) string {
 }
 
 func (e *Engine) runScan(ctx context.Context) error {
-	q, v, cfg, err := e.clients()
+	e.retry(ctx)
+	env, err := e.clients()
 	if err != nil {
 		return err
 	}
-	canLink := e.linkerFor(cfg) != nil
-	all, err := q.List(ctx, nil)
-	if err != nil {
-		return err
+	cfg := env.Cfg
+	lists, down := ListAll(ctx, env)
+	if ctx.Err() != nil {
+		return errors.New("analyse arrêtée")
 	}
+	if len(lists) == 0 {
+		return errors.New(DownText(down))
+	}
+	e.mu.Lock()
+	e.scan.Warn = DownText(down)
+	e.mu.Unlock()
+
+	// Toutes les listes fusionnées. Ce qui est déjà dans l'un des clients
+	// (info-hash connu) n'est jamais proposé à l'ajout.
 	known := map[string]bool{}
 	type group struct {
+		t      Target
+		rank   int // place du client dans les réglages
+		path   string
 		copies []client.Torrent
 		onV3X  bool
 	}
 	groups := map[string]*group{}
 	var order []string
-	for _, t := range all {
-		for _, h := range t.Hashes {
-			known[h] = true
-		}
-		if t.Progress < 1 || t.ContentPath == "" {
-			continue
-		}
-		k := normPath(t.ContentPath)
-		g := groups[k]
-		if g == nil {
-			g = &group{}
-			groups[k] = g
-			order = append(order, k)
-		}
-		g.copies = append(g.copies, t)
-		for _, h := range t.Trackers {
-			if isV3XHost(h) {
-				g.onV3X = true
+	byID := map[string]Target{}
+	for rank, l := range lists {
+		byID[l.Target.ID] = l.Target
+		for _, t := range l.List {
+			for _, h := range t.Hashes {
+				known[h] = true
+			}
+			if t.Progress < 1 || t.ContentPath == "" {
+				continue
+			}
+			// Mêmes données = même emplacement dans le même client (deux
+			// clients ne nomment pas leurs dossiers de la même façon).
+			k := l.Target.ID + "|" + normPath(t.ContentPath)
+			g := groups[k]
+			if g == nil {
+				g = &group{t: l.Target, rank: rank, path: normPath(t.ContentPath)}
+				groups[k] = g
+				order = append(order, k)
+			}
+			g.copies = append(g.copies, t)
+			for _, h := range t.Trackers {
+				if isV3XHost(h) {
+					g.onV3X = true
+				}
 			}
 		}
 	}
 
-	// Ordre stable (par emplacement) : d'une analyse à l'autre, la même copie
-	// sert à l'ajout quand il y en a plusieurs identiques.
-	sort.Strings(order)
+	// Ordre stable (client dans l'ordre des réglages, puis emplacement) :
+	// d'une analyse à l'autre, la même copie sert à l'ajout quand il y en a
+	// plusieurs identiques, et c'est celle du premier client qui l'a.
+	sort.Slice(order, func(i, j int) bool {
+		a, b := groups[order[i]], groups[order[j]]
+		if a.rank != b.rank {
+			return a.rank < b.rank
+		}
+		return a.path < b.path
+	})
 
 	cache := loadSigCache()
 	fresh := map[string]Sig{}
 	rows := map[string]*Row{}
+	rowOf := map[string]*Row{} // par groupe
 	var toRead []*Row
 	for _, k := range order {
 		g := groups[k]
 		rep := g.copies[0]
-		r := &Row{Key: strings.ToLower(rep.Hash), Name: rep.Name, Size: rep.TotalSize, Copies: len(g.copies), contentPath: rep.ContentPath, Path: rep.ContentPath}
+		hash := strings.ToLower(rep.Hash)
+		r := &Row{Key: hash + "@" + g.t.ID, hash: hash, Name: rep.Name, Size: rep.TotalSize, Copies: len(g.copies), contentPath: rep.ContentPath, Path: rep.ContentPath, Client: g.t.ID, ClientName: g.t.Name}
 		rows[r.Key] = r
+		rowOf[k] = r
 		if g.onV3X {
 			r.Status = StOnV3X
 			continue
 		}
-		if s, ok := cache[r.Key]; ok {
+		if s, ok := cache[hash]; ok {
 			s := s
 			r.sig = &s
-			fresh[r.Key] = s
+			fresh[hash] = s
 		} else {
 			toRead = append(toRead, r)
 		}
@@ -316,7 +355,7 @@ func (e *Engine) runScan(ctx context.Context) error {
 		go func(r *Row) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			s, err := sigFromClient(ctx, q, r.Key, r.Name)
+			s, err := sigFromClient(ctx, byID[r.Client].Client, r.hash, r.Name)
 			mu.Lock()
 			defer mu.Unlock()
 			done++
@@ -324,7 +363,7 @@ func (e *Engine) runScan(ctx context.Context) error {
 				r.Status, r.Detail = StError, err.Error()
 			} else {
 				r.sig = s
-				fresh[r.Key] = *s
+				fresh[r.hash] = *s
 			}
 			e.setProgress("read", done, len(toRead), "")
 		}(r)
@@ -333,6 +372,14 @@ func (e *Engine) runScan(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return errors.New("analyse arrêtée")
 	}
+	// Un client injoignable : ses empreintes restent en cache pour la suite.
+	if len(down) > 0 {
+		for h, s := range cache {
+			if _, ok := fresh[h]; !ok {
+				fresh[h] = s
+			}
+		}
+	}
 	saveSigCache(fresh)
 
 	// Téléchargé en partie : moins de données sélectionnées que la release.
@@ -340,7 +387,7 @@ func (e *Engine) runScan(ctx context.Context) error {
 	byKey := map[string]*Row{}
 	for _, k := range order {
 		g := groups[k]
-		r := rows[strings.ToLower(g.copies[0].Hash)]
+		r := rowOf[k]
 		if r.sig == nil || r.Status != StNone {
 			continue
 		}
@@ -374,7 +421,7 @@ func (e *Engine) runScan(ctx context.Context) error {
 			end = len(items)
 		}
 		e.setProgress("match", i, len(items), "")
-		res, err := v.MatchBatch(ctx, retry, items[i:end])
+		res, err := env.V3X.MatchBatch(ctx, retry, items[i:end])
 		if err != nil {
 			return err
 		}
@@ -393,14 +440,15 @@ func (e *Engine) runScan(ctx context.Context) error {
 				r.Status = StAdd
 			default:
 				r.Status = StRenamed
-				if q.CanRename() {
+				t := byID[r.Client]
+				if t.Client.CanRename() {
 					r.CanAdd = true
 					r.Detail = "mêmes fichiers sous d'autres noms : D3X peut l'ajouter sous les noms de ta copie, sans rien toucher sur le disque"
-				} else if canLink {
+				} else if e.linkerFor(cfg, t) != nil {
 					r.CanAdd = true
 					r.Detail = "mêmes fichiers sous d'autres noms : D3X peut la ranger dans ton dossier de liens, ses fichiers étant des liens physiques vers ta copie (aucune place en plus)"
 				} else {
-					r.Detail = "mêmes fichiers sous d'autres noms : " + q.Kind() + " ne sait pas renommer les fichiers d'un torrent"
+					r.Detail = "mêmes fichiers sous d'autres noms : " + t.Client.Kind() + " ne sait pas renommer les fichiers d'un torrent"
 				}
 			}
 		}
@@ -408,11 +456,12 @@ func (e *Engine) runScan(ctx context.Context) error {
 	e.setProgress("match", len(items), len(items), "")
 
 	// Plusieurs copies identiques rangées à des endroits différents (une par
-	// tracker, par exemple) trouvent la même release V3X : une seule ligne,
-	// la première copie servira à l'ajout, les autres sont comptées.
+	// tracker, ou une par client) trouvent la même release V3X : une seule
+	// ligne, la première copie (celle du premier client qui l'a) servira à
+	// l'ajout, les autres sont comptées.
 	firstOf := map[string]*Row{}
 	for _, k := range order {
-		r := rows[strings.ToLower(groups[k].copies[0].Hash)]
+		r := rowOf[k]
 		if r == nil || r.Match == nil || (r.Status != StAdd && r.Status != StRenamed) {
 			continue
 		}

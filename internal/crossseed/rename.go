@@ -291,14 +291,16 @@ func diskLookup(ctx context.Context, q client.Client, save string, rules []pathm
 	}
 }
 
-// addRenamed : la release V3X ajoutée sous les noms de ta copie.
-func (e *Engine) addRenamed(ctx context.Context, q client.Client, v *v3x.Client, cfg *config.Config, r *Row) (string, string) {
-	link := e.linkerFor(cfg)
+// addRenamed : la release V3X ajoutée sous les noms de ta copie, dans le
+// client tg qui l'a.
+func (e *Engine) addRenamed(ctx context.Context, env *Env, tg Target, r *Row) (string, string) {
+	q, cfg := tg.Client, env.Cfg
+	link := e.linkerFor(cfg, tg)
 	if !q.CanRename() && link == nil {
 		return StRenamed, q.Kind() + " ne sait pas renommer les fichiers d'un torrent : ajout impossible (ou active les liens physiques dans les réglages)"
 	}
 	m := r.Match
-	raw, err := v.DownloadTorrent(ctx, &v3x.Retry{}, m.ID)
+	raw, err := env.V3X.DownloadTorrent(ctx, &v3x.Retry{}, m.ID)
 	if err != nil {
 		return StRenamed, err.Error()
 	}
@@ -312,7 +314,7 @@ func (e *Engine) addRenamed(ctx context.Context, q client.Client, v *v3x.Client,
 	if r.sig == nil || t.SizeHash != r.sig.SizeHash {
 		return StRenamed, "tailles différentes de ta copie après vérification"
 	}
-	files, _, err := q.Files(ctx, r.Key)
+	files, _, err := q.Files(ctx, r.hash)
 	if err != nil {
 		return StRenamed, "fichiers de ta copie illisibles : " + err.Error()
 	}
@@ -345,17 +347,17 @@ func (e *Engine) addRenamed(ctx context.Context, q client.Client, v *v3x.Client,
 		return StRenamed, err.Error()
 	}
 	if !q.CanRename() {
-		return e.addLinked(ctx, q, cfg, r, link, raw, t, save, pairs, all)
+		return e.addLinked(ctx, tg, cfg, r, link, raw, t, save, pairs, all)
 	}
-	if err := renameSafe(pairs, local, save, r.contentPath, all, diskLookup(ctx, q, save, cfg.PathMap)); err != nil {
+	if err := renameSafe(pairs, local, save, r.contentPath, all, diskLookup(ctx, q, save, tg.PathMap)); err != nil {
 		// Renommer serait risqué : les liens physiques, eux, vont dans un
 		// dossier à part où rien n'existe encore.
 		if link != nil {
-			return e.addLinked(ctx, q, cfg, r, link, raw, t, save, pairs, all)
+			return e.addLinked(ctx, tg, cfg, r, link, raw, t, save, pairs, all)
 		}
 		return StRenamed, err.Error() + " : ajout à faire à la main"
 	}
-	hash, n, err := e.addAndRename(ctx, q, cfg, r.Key, m.ID, raw, save, pairs)
+	hash, n, err := e.addAndRename(ctx, tg, cfg, r.Key, m.ID, raw, save, pairs)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInClient):
@@ -372,8 +374,8 @@ func (e *Engine) addRenamed(ctx context.Context, q client.Client, v *v3x.Client,
 // fichiers étant un lien physique vers le fichier de même taille de ta copie.
 // Ta copie n'est pas touchée et rien n'est écrasé ; si l'ajout échoue, les
 // liens sont retirés. Le client vérifie, le torrent ne démarre qu'à 100 %.
-func (e *Engine) addLinked(ctx context.Context, q client.Client, cfg *config.Config, r *Row, link Linker, raw []byte, t *torrent.Torrent, save string, pairs []client.Rename, all []client.Torrent) (string, string) {
-	dir := strings.TrimSpace(cfg.Links.Dir)
+func (e *Engine) addLinked(ctx context.Context, tg Target, cfg *config.Config, r *Row, link Linker, raw []byte, t *torrent.Torrent, save string, pairs []client.Rename, all []client.Torrent) (string, string) {
+	dir := strings.TrimSpace(tg.LinksDir)
 	size := map[int]int64{}
 	for _, f := range t.Files {
 		size[f.Index] = f.Size
@@ -396,13 +398,13 @@ func (e *Engine) addLinked(ctx context.Context, q client.Client, cfg *config.Con
 			}
 		}
 	}
-	if err := link(ctx, dir, lp, false); err != nil {
+	if err := link(ctx, tg.PathMap, dir, lp, false); err != nil {
 		return StRenamed, "liens physiques : " + err.Error()
 	}
-	hash, err := e.AddAndVerify(ctx, q, cfg, r.Key, r.Match.ID, raw, dir)
+	hash, err := e.AddAndVerify(ctx, tg, cfg, r.Key, r.Match.ID, raw, dir)
 	if err != nil {
 		if hash == "" || errors.Is(err, ErrInClient) {
-			_ = link(context.Background(), dir, lp, true)
+			_ = link(context.Background(), tg.PathMap, dir, lp, true)
 		}
 		switch {
 		case errors.Is(err, ErrInClient):
@@ -425,7 +427,8 @@ func plural(n int) string {
 // addAndRename : ajout à l'arrêt, renommages dans le client, contrôle des
 // noms obtenus, puis vérification et surveillance (démarrage à 100 %).
 // Un échec après l'ajout retire le torrent (fichiers jamais touchés).
-func (e *Engine) addAndRename(ctx context.Context, q client.Client, cfg *config.Config, key, id string, raw []byte, save string, pairs []client.Rename) (string, int, error) {
+func (e *Engine) addAndRename(ctx context.Context, tg Target, cfg *config.Config, key, id string, raw []byte, save string, pairs []client.Rename) (string, int, error) {
+	q := tg.Client
 	t, err := torrent.Parse(raw)
 	if err != nil {
 		return "", 0, errors.New("le .torrent reçu de V3X est illisible")
@@ -498,6 +501,6 @@ func (e *Engine) addAndRename(ctx context.Context, q client.Client, cfg *config.
 	if err := q.Recheck(ctx, hash); err != nil {
 		return hash, n, errors.New("vérification impossible à lancer : " + err.Error())
 	}
-	e.Watch(key, t.Name, id, hash)
+	e.Watch(tg.ID, key, t.Name, id, hash)
 	return hash, n, nil
 }

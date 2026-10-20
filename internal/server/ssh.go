@@ -160,10 +160,12 @@ func (s *Server) sshForget(w http.ResponseWriter, r *http.Request) {
 	s.state(w, r)
 }
 
-// updateConfig modifie et enregistre la configuration.
+// updateConfig modifie et enregistre la configuration. La liste des clients
+// est copiée : f peut la modifier sans toucher la configuration en cours.
 func (s *Server) updateConfig(f func(*config.Config)) error {
 	s.mu.Lock()
 	c := *s.cfg
+	c.Clients = append([]config.ClientConfig(nil), c.Clients...)
 	f(&c)
 	s.cfg = &c
 	s.mu.Unlock()

@@ -14,6 +14,7 @@ import (
 	"github.com/V3x0rV3x/D3X/internal/client"
 	"github.com/V3x0rV3x/D3X/internal/config"
 	"github.com/V3x0rV3x/D3X/internal/links"
+	"github.com/V3x0rV3x/D3X/internal/pathmap"
 	"github.com/V3x0rV3x/D3X/internal/torrent"
 	"github.com/V3x0rV3x/D3X/internal/v3x"
 )
@@ -45,7 +46,9 @@ type LibFile struct {
 type LibraryIO interface {
 	Files(ctx context.Context, src, dir string) ([]LibFile, error)
 	ReadAt(ctx context.Context, src, path string, off, n int64) ([]byte, error)
-	ClientPath(src, path string) string
+	// ClientPath : le chemin vu par le client qui reçoit l'ajout, dont rules
+	// est la correspondance de dossiers.
+	ClientPath(src, path string, rules []pathmap.Rule) string
 }
 
 // LibRow : une release V3X retrouvée dans la médiathèque.
@@ -158,10 +161,12 @@ type libLocal struct {
 }
 
 func (e *Engine) runLibrary(ctx context.Context, folders []config.LibFolder) error {
-	q, v, _, err := e.clients()
+	e.retry(ctx)
+	env, err := e.clients()
 	if err != nil {
 		return err
 	}
+	v := env.V3X
 	e.mu.Lock()
 	io := e.lib.io
 	e.mu.Unlock()
@@ -188,17 +193,26 @@ func (e *Engine) runLibrary(ctx context.Context, folders []config.LibFolder) err
 	}
 	sort.Slice(sizes, func(i, j int) bool { return sizes[i] > sizes[j] })
 
-	// 2. Les releases V3X qui ont un fichier de ces tailles.
+	// 2. Les releases V3X qui ont un fichier de ces tailles, hors celles déjà
+	// dans l'un des clients.
 	known := map[string]bool{}
-	if lst, err := q.List(ctx, nil); err == nil {
-		for _, t := range lst {
+	lists, down := ListAll(ctx, env)
+	if ctx.Err() != nil {
+		return errors.New("analyse arrêtée")
+	}
+	if len(lists) == 0 {
+		return errors.New(DownText(down))
+	}
+	e.mu.Lock()
+	e.lib.scan.Warn = DownText(down)
+	e.mu.Unlock()
+	for _, l := range lists {
+		for _, t := range l.List {
 			known[strings.ToLower(t.Hash)] = true
 			for _, h := range t.Hashes {
 				known[strings.ToLower(h)] = true
 			}
 		}
-	} else {
-		return err
 	}
 	// Déjà proposées par le cross-seed (une copie dans le client) : pas ici.
 	crossIDs := map[string]bool{}
@@ -546,14 +560,25 @@ func (e *Engine) runLibQueue(ctx context.Context) {
 	}
 }
 
-// addLibrary : la release ajoutée sur les fichiers de la médiathèque. Liens
-// physiques si le membre les a choisis (la médiathèque n'est pas touchée),
-// sinon renommage dans le client (rien ne bouge sur le disque).
+// addLibrary : la release ajoutée sur les fichiers de la médiathèque, dans le
+// client choisi pour la médiathèque (le premier sinon). Liens physiques si le
+// membre les a choisis (la médiathèque n'est pas touchée), sinon renommage
+// dans le client (rien ne bouge sur le disque).
 func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
-	q, _, cfg, err := e.clients()
+	env, err := e.clients()
 	if err != nil {
 		return StAdd, err.Error()
 	}
+	cfg := env.Cfg
+	id := cfg.LibraryClient
+	if cfg.Client(id) == nil {
+		id = ""
+	}
+	tg := env.Get(id)
+	if tg == nil {
+		return StAdd, env.Unreachable(id).Error()
+	}
+	q := tg.Client
 	e.mu.Lock()
 	io := e.lib.io
 	e.mu.Unlock()
@@ -564,10 +589,10 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 	// Chemins vus par le client.
 	cps := make([]string, len(r.pairs))
 	for i, p := range r.pairs {
-		cps[i] = io.ClientPath(r.Source, p.local.Path)
+		cps[i] = io.ClientPath(r.Source, p.local.Path, tg.PathMap)
 	}
-	if link := e.linkerFor(cfg); link != nil {
-		dir := strings.TrimSpace(cfg.Links.Dir)
+	if link := e.linkerFor(cfg, *tg); link != nil {
+		dir := strings.TrimSpace(tg.LinksDir)
 		lp := make([]links.Pair, len(r.pairs))
 		roots := map[string]bool{}
 		for i, p := range r.pairs {
@@ -582,13 +607,13 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 				}
 			}
 		}
-		if err := link(ctx, dir, lp, false); err != nil {
+		if err := link(ctx, tg.PathMap, dir, lp, false); err != nil {
 			return StAdd, "liens physiques : " + err.Error()
 		}
-		hash, err := e.AddAndVerify(ctx, q, cfg, r.Key, r.Match.ID, r.raw, dir)
+		hash, err := e.AddAndVerify(ctx, *tg, cfg, r.Key, r.Match.ID, r.raw, dir)
 		if err != nil {
 			if hash == "" || errors.Is(err, ErrInClient) {
-				_ = link(context.Background(), dir, lp, true)
+				_ = link(context.Background(), tg.PathMap, dir, lp, true)
 			}
 			switch {
 			case errors.Is(err, ErrInClient):
@@ -614,10 +639,10 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 		pairs[i] = client.Rename{Index: p.v.Index, From: p.v.Path, To: rel}
 		local = append(local, torrent.File{Path: rel, Size: p.v.Size, Index: i})
 	}
-	if err := renameSafe(pairs, local, save, "", all, diskLookup(ctx, q, save, cfg.PathMap)); err != nil {
+	if err := renameSafe(pairs, local, save, "", all, diskLookup(ctx, q, save, tg.PathMap)); err != nil {
 		return StAdd, err.Error() + " (ou active les liens physiques)"
 	}
-	hash, n, err := e.addAndRename(ctx, q, cfg, r.Key, r.Match.ID, r.raw, save, pairs)
+	hash, n, err := e.addAndRename(ctx, *tg, cfg, r.Key, r.Match.ID, r.raw, save, pairs)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInClient):

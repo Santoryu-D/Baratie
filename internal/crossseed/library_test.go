@@ -15,6 +15,7 @@ import (
 	"github.com/V3x0rV3x/D3X/internal/client"
 	"github.com/V3x0rV3x/D3X/internal/config"
 	"github.com/V3x0rV3x/D3X/internal/maketorrent"
+	"github.com/V3x0rV3x/D3X/internal/pathmap"
 	"github.com/V3x0rV3x/D3X/internal/torrent"
 	"github.com/V3x0rV3x/D3X/internal/v3x"
 )
@@ -45,7 +46,7 @@ func (l testLib) ReadAt(_ context.Context, _, p string, off, n int64) ([]byte, e
 	return b[:k], nil
 }
 
-func (l testLib) ClientPath(_, p string) string {
+func (l testLib) ClientPath(_, p string, _ []pathmap.Rule) string {
 	rel, _ := filepath.Rel(l.root, p)
 	return "/lib/" + filepath.ToSlash(rel)
 }
@@ -152,7 +153,7 @@ func TestLibrary(t *testing.T) {
 	q, _ := client.New(client.Options{URL: qs.URL, User: "admin", Pass: "secret"})
 	v := v3x.New(vs.URL, "cle", "D3X/test")
 	cfg := config.Defaults()
-	e := New(func() (client.Client, *v3x.Client, *config.Config, error) { return q, v, cfg, nil })
+	e := New(oneClient(q, v, cfg))
 	e.SetLibraryIO(testLib{root: lib})
 	if err := e.StartLibrary([]config.LibFolder{{Path: lib, Source: "local"}}); err != nil {
 		t.Fatal(err)

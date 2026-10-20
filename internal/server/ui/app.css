@@ -160,6 +160,7 @@ a { color: var(--accent); text-underline-offset: 2px; }
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
 .chip.ok .dot { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
 .chip.bad .dot { background: var(--bad); }
+.chips { display: contents; }
 
 /* ---------- contenu ---------- */
 main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 0; position: relative; z-index: 2; }
@@ -264,6 +265,8 @@ span.req:hover { text-decoration: none; }
 span.req { cursor: help; }
 .req.mine { color: var(--muted); background: transparent; border: 1px solid var(--line); }
 .copies { font: 600 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; margin-left: 6px; }
+/* Le client d'une ligne, quand il y en a plusieurs. */
+.ctag { font: 600 11px var(--sans); color: var(--muted); background: var(--sunk); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; margin-left: 6px; white-space: nowrap; vertical-align: 1px; cursor: default; }
 .seeds b { font-weight: 650; }
 .seeds .rare { color: var(--warn); }
 .empty { padding: 28px; text-align: center; color: var(--muted); margin: 0; }
@@ -329,6 +332,24 @@ label.check { font-weight: 400; display: flex; gap: 8px; align-items: flex-start
 .detect { display: flex; align-items: flex-end; }
 .detected { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
 .detected li { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+
+/* Les clients torrent : un formulaire seul, ou une carte par client. */
+.clients { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.client-card:not(.single) { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--ground); }
+.client-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.client-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; }
+.client-head .dot.ok { background: var(--ok); }
+.client-head .dot.bad { background: var(--bad); }
+.client-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.client-title b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.client-title .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.client-card:not(.single) .client-body { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 2px; }
+.client-body select { display: block; }
+.sublegend { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 18px 0 0; }
+.pub-client { display: flex; align-items: center; gap: 8px; margin: 6px 0 4px; flex-wrap: wrap; }
+.pub-client select, #lib-client { padding: 5px 8px; font-size: 13px; }
+#lib-client-row { margin: 12px 0 0; }
+#lib-client-row label, .pub-client label { margin: 0; font-weight: 500; }
 input:disabled { opacity: .5; }
 
 /* ---------- apparence ---------- */

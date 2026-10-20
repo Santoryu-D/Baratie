@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/V3x0rV3x/D3X/internal/config"
+	"github.com/V3x0rV3x/D3X/internal/pathmap"
 	"github.com/V3x0rV3x/D3X/internal/v3x"
 )
 
@@ -28,6 +29,7 @@ func (s *Server) routesPublish() {
 	s.mux.HandleFunc("GET /ui/pub/{id}/file/{index}", s.pubFile)
 	s.mux.HandleFunc("POST /ui/pub/{id}/fiche", s.pubFiche)
 	s.mux.HandleFunc("POST /ui/pub/{id}/clientdir", s.pubClientDir)
+	s.mux.HandleFunc("POST /ui/pub/{id}/client", s.pubClient)
 	s.mux.HandleFunc("POST /ui/pub/{id}/publish", s.pubPublish)
 }
 
@@ -39,9 +41,15 @@ func decode(w http.ResponseWriter, r *http.Request, max int64, v interface{}) bo
 	return true
 }
 
+// v3xClient : V3X seul (la fiche, TMDB, les demandes n'ont pas besoin du
+// client torrent).
 func (s *Server) v3xClient() (*v3x.Client, error) {
-	_, v, _, err := s.clients()
-	return v, err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.v == nil || s.me == nil {
+		return nil, errors.New("D3X n'est pas connecté à V3X : vérifie ta clé API dans les réglages")
+	}
+	return s.v, nil
 }
 
 // apiFail transmet une erreur du site avec son code HTTP.
@@ -256,16 +264,45 @@ func (s *Server) pubClientDir(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, 1<<14, &in) {
 		return
 	}
-	if err := s.pub.SetClientDir(r.PathValue("id"), in.Dir, in.Remember); err != nil {
+	rule, cid, err := s.pub.SetClientDir(r.PathValue("id"), in.Dir)
+	if err != nil {
 		fail(w, http.StatusBadRequest, err)
 		return
 	}
-	if in.Remember {
-		if c, err := config.Load(); err == nil {
-			s.mu.Lock()
-			s.cfg.PathMap = c.PathMap
-			s.mu.Unlock()
+	// Retenue dans les dossiers du client qui seedera la release.
+	if in.Remember && rule != nil {
+		err := s.updateConfig(func(c *config.Config) {
+			cc := c.Client(cid)
+			if cc == nil {
+				return
+			}
+			rules := []pathmap.Rule{*rule}
+			for _, x := range cc.PathMap {
+				if x.From != rule.From {
+					rules = append(rules, x)
+				}
+			}
+			cc.PathMap = rules
+		})
+		if err != nil {
+			fail(w, http.StatusInternalServerError, errors.New("dossier non retenu : "+err.Error()))
+			return
 		}
+	}
+	s.pubGet(w, r)
+}
+
+// pubClient : le client qui seedera la release, choisi par le membre.
+func (s *Server) pubClient(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Client string `json:"client"`
+	}
+	if !decode(w, r, 1<<12, &in) {
+		return
+	}
+	if err := s.pub.SetClient(r.PathValue("id"), in.Client); err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
 	}
 	s.pubGet(w, r)
 }
