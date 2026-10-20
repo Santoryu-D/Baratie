@@ -12,7 +12,7 @@ L'outil de bureau des membres de [V3X](https://v3x.club).
 - **Musique** : D3X lit les tags et la qualité des pistes, retrouve l'album dans MusicBrainz en comparant les durées, et prépare la fiche album du site.
 - **Lot** : un dossier entier passé au crible. D3X ne publie seul que ce qui est sûr ; le reste attend ta revue.
 
-Clients pris en charge : **qBittorrent**, **Transmission**, **Deluge** et **rTorrent** (ruTorrent), sur ce PC, un NAS ou une seedbox.
+Clients pris en charge : **qBittorrent**, **Transmission**, **Deluge** et **rTorrent** (ruTorrent), sur ce PC, un NAS ou une seedbox, et [plusieurs à la fois](#plusieurs-clients) (une seedbox et ce PC, par exemple).
 
 ## Ce que fait D3X, et ce qu'il ne fait jamais
 
@@ -34,7 +34,21 @@ L'analyse range tes releases en onglets :
 - **Noms différents** : les mêmes fichiers sous d'autres noms (voir les [questions](#questions)).
 - **Pas sur V3X** : ce que tu seedes ailleurs et qui manque à V3X. « Publier » ouvre la fiche d'une release, ou coches-en plusieurs pour les passer au crible du lot. Celles qui répondent à une **demande ouverte** sur le site sont en tête, avec la prime ; une fois ta release publiée et validée, D3X la propose au demandeur d'un clic.
 
-D3X retrouve les fichiers d'une release sur ce PC, sur ta seedbox, ou sur un NAS si tu lui indiques où il voit les dossiers du client (Réglages ▸ Dossiers du client).
+D3X retrouve les fichiers d'une release sur ce PC, sur ta seedbox, ou sur un NAS si tu lui indiques où il voit les dossiers du client (Réglages ▸ Clients torrent ▸ Dossiers du client).
+
+## Plusieurs clients
+
+Tes films sur une seedbox dans Deluge, tes livres sur ce PC dans qBittorrent ? Règle les deux dans Réglages ▸ Clients torrent (huit au plus), chacun avec son nom (« Seedbox », « PC »), son adresse, et ses propres dossiers du client.
+
+- **Analyse** : D3X interroge tous les clients en même temps et fusionne ce qu'ils seedent. Chaque ligne porte le nom de son client.
+- **Chaque cross-seed part dans le client qui a déjà les fichiers**, avec le chemin que ce client connaît. Si deux clients ont les mêmes fichiers, une seule ligne, ajoutée au premier de la liste (« Monter » change l'ordre). Une release déjà présente dans l'un des clients n'est jamais proposée.
+- **Un client injoignable ne bloque pas les autres** : un bandeau le signale (« Seedbox injoignable : … ») et l'analyse continue sans lui. Il est retenté au début de chaque analyse.
+- **Mon seed et la surveillance** regardent tous les clients : une release en seed dans l'un d'eux est en seed. Si un client ne répond pas, ce qu'il seede n'est pas compté comme absent, et aucune alerte de hit and run n'en découle.
+- **Publier** : la release part en seed dans le client dont les dossiers couvrent celui de la release, sinon celui qui seede déjà dans ce dossier, sinon celui qui tourne sur la machine des fichiers, sinon le premier. Tu peux en choisir un autre jusqu'à l'envoi.
+- **Médiathèque** : tu choisis le client qui reçoit ses ajouts (le premier par défaut).
+- **Liens physiques** : un dossier de liens par client, tel que ce client le voit.
+
+Avec un seul client, rien ne change : mêmes écrans, aucune étiquette.
 
 ## Mon seed
 
@@ -65,7 +79,7 @@ Une release dont il manque un fichier (souvent un petit .nfo) est signalée « i
 
 ## Les liens physiques
 
-Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et D3X refuse de renommer quand un nom pourrait déjà exister. Dans Réglages ▸ Liens physiques, choisis un **dossier de liens**, tel que ton client le voit : D3X y range la release V3X, chacun de ses fichiers étant un lien physique vers le fichier de ta copie.
+Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et D3X refuse de renommer quand un nom pourrait déjà exister. Dans Réglages ▸ Liens physiques, choisis un **dossier de liens**, tel que ton client le voit (un par client si tu en as plusieurs) : D3X y range la release V3X, chacun de ses fichiers étant un lien physique vers le fichier de ta copie.
 
 - Aucune place en plus : un lien physique est le même fichier sous un autre nom.
 - Ta copie n'est pas touchée, et rien n'est jamais écrasé : un lien ne se crée que là où il n'y a rien. Si l'ajout échoue, les liens sont retirés, et D3X n'efface un lien que s'il pointe bien vers ta copie.
@@ -104,7 +118,7 @@ Tes releases sont sur une seedbox ? Pas besoin de les rapatrier : dans Réglages
 - **Clé d'hôte vérifiée** : à la première connexion, D3X te montre l'empreinte de la seedbox et attend ton accord. Si elle change ensuite, tout est bloqué jusqu'à ce que tu acceptes la nouvelle.
 - **Le mot de passe n'est jamais enregistré** : il reste en mémoire le temps de la session. Avec une clé SSH sans phrase de passe, la seedbox se reconnecte seule au lancement.
 - Aucun nom de fichier ne passe par le shell de la seedbox : chaque demande à l'agent part en un seul argument encodé.
-- Ton client torrent doit tourner sur la seedbox (règle son adresse dans Client torrent) : la release publiée part en seed sur les mêmes fichiers.
+- Le client torrent de la seedbox doit être dans tes clients (Réglages ▸ Clients torrent) : la release publiée part en seed sur les mêmes fichiers.
 
 Seedbox sous Linux x86_64 ou arm64.
 
@@ -178,9 +192,9 @@ Chaque version publie `checksums.txt` (l'empreinte SHA-256 de chaque fichier) et
 ## Régler
 
 1. **Ta clé API V3X** : [Réglages ▸ Intégrations](https://v3x.club/settings?tab=integrations) sur le site, avec le droit « Torznab » (cross-seed) et le droit « Upload » (publier).
-2. **Ton client torrent**, par son interface web. Le bouton *Détecter sur ce PC* trouve ceux qui tournent ici.
+2. **Ton client torrent**, par son interface web, ou plusieurs (« Ajouter un autre client »). Le bouton *Détecter sur ce PC* trouve ceux qui tournent ici. « Tester la connexion » essaie un client sans rien enregistrer.
 3. **Ta seedbox** (facultatif), par SSH, pour publier ce qui s'y trouve.
-4. **Les dossiers du client** (facultatif) : si ton client tourne ailleurs (NAS, Docker), une ligne par dossier, son chemin ici et le même vu par le client.
+4. **Les dossiers du client** (facultatif), pour chaque client : s'il tourne ailleurs (NAS, Docker), une ligne par dossier, son chemin ici et le même vu par le client.
 
 | Client | Adresse habituelle | À activer |
 | --- | --- | --- |
@@ -205,7 +219,9 @@ Les réglages restent sur ta machine, lisibles par toi seul :
 
 **Et l'onglet « Noms différents » ?** Ce sont les mêmes fichiers que sur V3X sous d'autres noms (dossier renommé, épisodes renommés par ta médiathèque…). D3X ajoute la release V3X à l'arrêt, donne à ses fichiers les noms de ta copie *dans le client* (chaque fichier V3X associé à un fichier de même taille), puis lance la vérification : elle ne démarre qu'à 100 %, sinon elle reste arrêtée. Rien n'est créé, déplacé ni renommé sur ton disque. Par prudence, D3X refuse quand un nom de la release V3X existe déjà, car le client déplacerait ce fichier : autre fichier de ta copie, autre torrent du client, ou fichier présent sur le disque. Le disque est vérifié par D3X quand il le voit (même machine, ou dossier partagé avec une correspondance de chemins), sinon demandé au client (qBittorrent 5, Deluge) ; quand personne ne peut le vérifier, D3X refuse au lieu de deviner. Possible avec qBittorrent, Deluge et Transmission (même rangement des dossiers, disque vu par D3X) ; rTorrent ne sait pas renommer les fichiers d'un torrent.
 
-**Mon client tourne sur un NAS.** Publier lit les fichiers depuis ce PC (partage réseau) et ton client les seede là où il les voit : D3X traduit le chemin, en le devinant d'après les torrents que le client seede déjà dans ce dossier. Tu peux le corriger, il s'en souviendra.
+**Mon client tourne sur un NAS.** Publier lit les fichiers depuis ce PC (partage réseau) et ton client les seede là où il les voit : D3X traduit le chemin, en le devinant d'après les torrents que le client seede déjà dans ce dossier. Tu peux le corriger, il s'en souviendra (dans les dossiers de ce client).
+
+**Une seedbox et des fichiers sur ce PC ?** Règle les deux clients : D3X les analyse ensemble, et chaque cross-seed part dans le client qui a les fichiers. Voir [Plusieurs clients](#plusieurs-clients). Les réglages restent lisibles par D3X 1.0 : il n'y retrouverait que le premier client.
 
 ## Compiler soi-même
 
@@ -225,7 +241,7 @@ Pour regarder l'interface sans compte ni client torrent, le mode démo lance la 
 D3X_DEMO=600 go test ./internal/server -run 'TestDemo$' -v
 ```
 
-puis ouvrir `http://127.0.0.1:8799/auth?t=demo`.
+puis ouvrir `http://127.0.0.1:8799/auth?t=demo`. Avec `D3X_DEMO_CLIENTS=1`, la démo a trois clients : une seedbox, ce PC et un NAS éteint.
 
 ## Licence
 
