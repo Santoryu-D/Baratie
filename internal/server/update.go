@@ -49,9 +49,13 @@ func (s *Server) PageGone() bool {
 // redémarrage ni d'arrêt à ce moment-là.
 func (s *Server) Busy() bool { return s.engine.Busy() || s.pub.Busy() }
 
-// updateLoop cherche une nouvelle version au lancement puis toutes les 6 h, la
-// télécharge et la vérifie. Elle n'est installée qu'au redémarrage (bouton de
-// la page ou prochain lancement), jamais au milieu d'un travail.
+// updateEvery : une version sortie dans la soirée n'était vue que six heures
+// plus tard (retour de V3x0r, 20/10/26).
+const updateEvery = time.Hour
+
+// updateLoop cherche une nouvelle version au lancement puis toutes les heures,
+// la télécharge et la vérifie. Elle n'est installée qu'au redémarrage (bouton
+// de la page ou prochain lancement), jamais au milieu d'un travail.
 func (s *Server) updateLoop() {
 	if s.Version == "dev" || s.Version == "" {
 		return
@@ -64,17 +68,36 @@ func (s *Server) updateLoop() {
 		if enabled {
 			s.checkUpdate(pub)
 		}
-		time.Sleep(6 * time.Hour)
+		time.Sleep(updateEvery)
 	}
 }
 
 func (s *Server) checkUpdate(pub ed25519.PublicKey) {
+	s.lastUpdateCheck.Store(time.Now().UnixNano())
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	rel, err := update.Latest(ctx, s.Version)
 	if err != nil || !update.Newer(rel.Version, s.Version) {
 		return
 	}
+	s.stageRelease(ctx, pub, rel)
+}
+
+// stageRelease annonce la version, puis la télécharge et la vérifie (sauf en
+// Docker, où l'image se met à jour à part). Une version déjà prête n'est pas
+// retéléchargée à chaque passage, et deux préparations ne tournent jamais en
+// même temps.
+func (s *Server) stageRelease(ctx context.Context, pub ed25519.PublicKey, rel *update.Release) {
+	s.mu.Lock()
+	if cur := s.update; cur != nil && cur.Version == rel.Version && cur.Ready {
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+	if !s.updateStaging.CompareAndSwap(false, true) {
+		return
+	}
+	defer s.updateStaging.Store(false)
 	u := &Update{Version: rel.Version, URL: rel.URL, Managed: s.opts.Managed}
 	s.mu.Lock()
 	s.update = u
@@ -82,14 +105,54 @@ func (s *Server) checkUpdate(pub ed25519.PublicKey) {
 	if pub == nil || s.opts.Managed != "" {
 		return
 	}
+	done := &Update{Version: u.Version, URL: u.URL, Managed: u.Managed}
 	if _, err := update.Stage(ctx, pub, rel); err != nil {
-		u.Error = err.Error()
+		done.Error = err.Error()
 	} else {
-		u.Ready = true
+		done.Ready = true
 	}
 	s.mu.Lock()
-	s.update = u
+	s.update = done
 	s.mu.Unlock()
+}
+
+// checkNow : bouton « Vérifier » à côté du numéro de version. Une recherche au
+// plus par minute (l'API de GitHub limite les appels sans compte). La réponse
+// part dès que la dernière version est connue ; si elle est plus récente, son
+// téléchargement et sa vérification continuent en arrière-plan.
+func (s *Server) checkNow(w http.ResponseWriter, r *http.Request) {
+	out := map[string]interface{}{}
+	if s.Version != "dev" && s.Version != "" && time.Since(time.Unix(0, s.lastUpdateCheck.Load())) >= time.Minute {
+		s.lastUpdateCheck.Store(time.Now().UnixNano())
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		rel, err := update.Latest(ctx, s.Version)
+		cancel()
+		if err != nil {
+			fail(w, http.StatusBadGateway, errors.New("GitHub ne répond pas, réessaie dans un moment"))
+			return
+		}
+		out["latest"] = rel.Version
+		if update.Newer(rel.Version, s.Version) {
+			s.mu.Lock()
+			pub := s.pubKey
+			s.mu.Unlock()
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+				defer cancel()
+				s.stageRelease(ctx, pub, rel)
+			}()
+			// Annoncée tout de suite (« téléchargement en cours ») si elle ne l'est pas déjà.
+			s.mu.Lock()
+			if s.update == nil || s.update.Version != rel.Version {
+				s.update = &Update{Version: rel.Version, URL: rel.URL, Managed: s.opts.Managed}
+			}
+			s.mu.Unlock()
+		}
+	}
+	s.mu.Lock()
+	out["version"], out["update"] = s.Version, s.update
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, out)
 }
 
 // Restart est fermé quand la page demande d'installer la mise à jour : main

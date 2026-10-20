@@ -66,8 +66,10 @@ type Server struct {
 
 	// Présence de la page : dernière requête de la page, et son « au revoir »
 	// (fermeture de la fenêtre). En nanosecondes Unix.
-	lastSeen atomic.Int64
-	byeAt    atomic.Int64
+	lastUpdateCheck atomic.Int64 // dernière recherche de version (UnixNano)
+	updateStaging   atomic.Bool  // téléchargement et vérification d'une version en cours
+	lastSeen        atomic.Int64
+	byeAt           atomic.Int64
 
 	ssh     *remote.Client // seedbox connectée (nil sinon)
 	sshSys  string
@@ -148,6 +150,7 @@ func NewWith(version string, cfg *config.Config, token string, port int, opts Op
 	s.routesCandidates()
 	s.routesLibrary()
 	s.mux.HandleFunc("POST /ui/update/restart", s.restartNow)
+	s.mux.HandleFunc("POST /ui/update/check", s.checkNow)
 	s.mux.HandleFunc("GET /ui/ping", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	s.mux.HandleFunc("POST /ui/bye", func(w http.ResponseWriter, r *http.Request) {
 		s.byeAt.Store(time.Now().UnixNano())

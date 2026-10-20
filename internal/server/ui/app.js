@@ -287,8 +287,42 @@ function watchHint() {
   $("#w-hint").textContent = t;
 }
 
+// Bouton « Vérifier » sous le numéro de version : cherche une nouvelle version
+// tout de suite, puis suit son téléchargement et sa vérification jusqu'à ce
+// que le bandeau propose de l'installer.
+async function checkForUpdate() {
+  const b = $("#ver-check");
+  if (b.disabled) return;
+  b.disabled = true;
+  b.textContent = "…";
+  try {
+    const r = await api("/ui/update/check", {});
+    renderState(await api("/ui/state"));
+    if (r.update) {
+      if (!r.update.ready && !r.update.error && !r.update.managed) {
+        toast("D3X " + r.update.version + " est sortie : téléchargement et vérification…", "ok");
+        for (let i = 0; i < 40; i++) {
+          await new Promise((res) => setTimeout(res, 3000));
+          const s = await api("/ui/state");
+          renderState(s);
+          if (!s.update || s.update.ready || s.update.error) break;
+        }
+      }
+    } else if (r.latest) {
+      toast("D3X est à jour (" + r.version + ").", "ok");
+    } else {
+      toast("Vérifié il y a moins d'une minute : D3X est à jour.", "ok");
+    }
+  } catch (e) {
+    if (e.message !== "session") toast(e.message, "bad");
+  } finally {
+    b.disabled = false;
+    b.textContent = "Vérifier";
+  }
+}
+
 // Installe la mise à jour vérifiée : D3X se relance sur la même session, la
-// page se reconnecte seule.
+// page se recharge seule.
 async function installUpdate() {
   try {
     await api("/ui/update/restart", {});
@@ -299,7 +333,11 @@ async function installUpdate() {
       try {
         const s = await api("/ui/state");
         if (s.version === want || s.version !== (ui.state && ui.state.version)) {
-          renderState(s);
+          // Page entière rechargée : sinon l'ancienne interface restait
+          // affichée face à la nouvelle version, avec son bandeau périmé
+          // (retour de V3x0r, 20/10/26). Le message suit le rechargement.
+          try { sessionStorage.setItem("d3x-updated", s.version); } catch (e) { /* rien */ }
+          location.reload();
           return;
         }
       } catch (e) { /* redémarrage en cours */ }
@@ -1391,8 +1429,20 @@ async function boot() {
   try {
     const s = await api("/ui/state");
     renderState(s);
-    // Connexions vérifiées en tâche de fond au lancement : on relit l'état une fois.
-    setTimeout(async () => { try { renderState(await api("/ui/state")); } catch (e) { /* rien */ } }, 2500);
+    try {
+      const v = sessionStorage.getItem("d3x-updated");
+      if (v) {
+        sessionStorage.removeItem("d3x-updated");
+        toast("D3X est passé en " + v + ".", "ok");
+      }
+    } catch (e) { /* rien */ }
+    // Connexions vérifiées en tâche de fond au lancement : on relit l'état une
+    // fois, puis encore à 15 s et 45 s, le temps que la recherche de version
+    // (5 s après le lancement) trouve et vérifie une mise à jour.
+    for (const ms of [2500, 15000, 45000]) {
+      setTimeout(async () => { try { renderState(await api("/ui/state")); } catch (e) { /* rien */ } }, ms);
+    }
+    $("#ver-check").addEventListener("click", checkForUpdate);
     // L'état (dont la mise à jour) est relu toutes les 5 minutes.
     setInterval(async () => { try { renderState(await api("/ui/state")); } catch (e) { /* rien */ } }, 300000);
   } catch (e) {
