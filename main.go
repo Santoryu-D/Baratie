@@ -153,6 +153,13 @@ func run(port int, window bool) error {
 			return err
 		}
 	} else {
+		// Fenêtre fantôme d'un D3X précédent (rectangle blanc ou gris resté sur
+		// le bureau) : on la ferme avant d'en ouvrir une neuve.
+		if window {
+			if n := desktop.CloseWindow(profileDir()); n > 0 {
+				log.Printf("ancienne fenêtre de D3X fermée (%d processus)", n)
+			}
+		}
 		if ln, err = net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port)); err != nil {
 			if ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
 				return err
@@ -184,6 +191,15 @@ func run(port int, window bool) error {
 			os.Exit(code)
 		})
 	}
+	// Arrêt de D3X (icône « Quitter », fenêtre fermée, signal, serveur tombé) :
+	// sa fenêtre part avec lui. Jamais pendant une mise à jour : la nouvelle
+	// version reprend la même fenêtre.
+	stop := func(code int) {
+		if window {
+			desktop.CloseWindow(profileDir())
+		}
+		quit(code)
+	}
 
 	// Fenêtre : la page signale sa présence (signal régulier, « au revoir » à la
 	// fermeture). Fenêtre fermée hors travail : D3X s'arrête ; pendant un
@@ -204,11 +220,22 @@ func run(port int, window bool) error {
 	}
 	if desktop.HasTray && window {
 		go func() {
+			cleaned := false
 			for {
 				time.Sleep(5 * time.Second)
-				if srv.PageGone() && !srv.Busy() && !srv.StayInTray() {
+				if !srv.PageGone() {
+					cleaned = false
+					continue
+				}
+				if !srv.Busy() && !srv.StayInTray() {
 					log.Println("fenêtre fermée, rien en cours : arrêt")
-					quit(0)
+					stop(0)
+				}
+				// D3X reste dans la zone de notification : la fenêtre fermée ne
+				// doit pas laisser de fantôme derrière elle.
+				if !cleaned && srv.PageClosed() {
+					desktop.CloseWindow(profileDir())
+					cleaned = true
 				}
 			}
 		}()
@@ -230,15 +257,15 @@ func run(port int, window bool) error {
 	}()
 
 	go func() {
-		stop := make(chan os.Signal, 1)
-		signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		select {
-		case <-stop:
-			quit(0)
+		case <-sig:
+			stop(0)
 		case err := <-errc:
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Println("serveur :", err)
-				quit(1)
+				stop(1)
 			}
 		}
 	}()
@@ -260,11 +287,11 @@ func run(port int, window bool) error {
 					for srv.Busy() {
 						time.Sleep(5 * time.Second)
 					}
-					quit(0)
+					stop(0)
 				}()
 				return
 			}
-			quit(0)
+			stop(0)
 		})
 		return nil
 	}

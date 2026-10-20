@@ -21,3 +21,6 @@ func QuitTray() {}
 func MessageBox(title, text string) { fmt.Fprintln(os.Stderr, title+" : "+text) }
 
 func hideConsole(*exec.Cmd) {}
+
+// CloseWindow ne fait rien hors Windows (la fenêtre suit le navigateur).
+func CloseWindow(string) int { return 0 }

@@ -45,6 +45,14 @@ func (s *Server) PageGone() bool {
 	return now-last > int64(3*time.Minute)
 }
 
+// PageClosed : la page a dit au revoir (fenêtre fermée) et rien n'est revenu
+// depuis 8 s. Contrairement au simple silence (veille de l'ordinateur), c'est
+// sûr : ce qui reste de la fenêtre est un fantôme qu'on peut fermer.
+func (s *Server) PageClosed() bool {
+	last, bye := s.lastSeen.Load(), s.byeAt.Load()
+	return bye > 0 && bye >= last && time.Now().UnixNano()-bye > int64(8*time.Second)
+}
+
 // Busy dit si D3X travaille (ajouts, vérifications, publications) : pas de
 // redémarrage ni d'arrêt à ce moment-là.
 func (s *Server) Busy() bool { return s.engine.Busy() || s.pub.Busy() }
