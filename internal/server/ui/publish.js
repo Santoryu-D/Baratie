@@ -141,6 +141,17 @@ function isFilmSeries() {
   return r === "films" || r === "series";
 }
 
+// Rapport VirusTotal exigé par V3X (même règle que le site, lib/virustotal.ts) :
+// applications Windows, macOS, smartphone et « autre », et tous les jeux ; un
+// jeu console seulement s'il contient un exécutable PC (retour de Luci).
+function needsVirusTotal() {
+  const slug = $("#f-leaf").value;
+  if (!/^applications-(windows|macos|smartphone|autre)$/.test(slug) && !/^jeux-video-/.test(slug)) return false;
+  if (!/^jeux-video-(nintendo|sony|microsoft)$/.test(slug)) return true;
+  const files = (pub.job && pub.job.files) || [];
+  return files.some((f) => /\.(exe|dll|msi|bat|cmd|ps1|scr|com|jar|vbs|msix|appx)$/i.test(f.rel || ""));
+}
+
 // ---------- sélecteur de dossiers ----------
 
 async function browse(path) {
@@ -216,7 +227,7 @@ function resetForm() {
   pub.miState = "idle";
   pub.tmdb = null;
   pub.dirty = {};
-  for (const id of ["#f-name", "#f-title", "#f-season", "#f-desc", "#f-nfo", "#tmdb-q"]) $(id).value = "";
+  for (const id of ["#f-name", "#f-title", "#f-season", "#f-desc", "#f-nfo", "#f-vt", "#tmdb-q"]) $(id).value = "";
   $("#f-notmdb").checked = false;
   $("#f-excl").checked = false;
   $("#f-team").checked = false;
@@ -687,6 +698,7 @@ function missing() {
   if (!$("#f-name").value.trim()) out.push("le nom de la release");
   // Musique : V3X refuse un nom sans la qualité (format, bits, fréquence).
   if (pub.fiche && (pub.fiche.warnings || []).includes("audio_naming")) out.push("la qualité dans le nom");
+  if (needsVirusTotal() && !$("#f-vt").value.trim()) out.push("le rapport VirusTotal");
   return out;
 }
 
@@ -695,6 +707,7 @@ function renderBar() {
   const j = pub.job;
   const show = pub.shown && j && !j.published;
   bar.classList.toggle("hidden", !show);
+  $("#vt-field").classList.toggle("hidden", !needsVirusTotal() && !$("#f-vt").value.trim());
   if (!show) return;
   const miss = missing();
   const go = $("#pub-go");
@@ -728,6 +741,8 @@ function fields() {
     f.creator = (pub.fiche && pub.fiche.creator) || pub.mb.artist || "";
   }
   if ($("#f-notmdb").checked) f.noTmdb = "true";
+  const vt = $("#f-vt").value.trim();
+  if (vt) f.virusTotalUrl = vt;
   if (pub.ctx && pub.ctx.user && pub.ctx.user.team) f.teamRelease = String($("#f-team").checked);
   return f;
 }
@@ -888,6 +903,7 @@ function bindPublish() {
   $("#f-notmdb").addEventListener("change", () => { if ($("#f-notmdb").checked) { pub.tmdb = null; $("#tmdb-picked").classList.add("hidden"); loadFicheSoon(); } renderBar(); });
   $("#f-root").addEventListener("change", () => { pub.dirty.category = true; fillLeaves($("#f-root").value, ""); renderBar(); });
   $("#f-leaf").addEventListener("change", () => { pub.dirty.category = true; loadFicheSoon(); renderBar(); });
+  $("#f-vt").addEventListener("input", renderBar);
   $("#f-name").addEventListener("input", () => { pub.dirty.name = true; loadFicheSoon(); renderBar(); });
   for (const [id, key] of [["#f-title", "title"], ["#f-season", "season"], ["#f-nfo", "nfo"], ["#f-lang", "language"]]) {
     $(id).addEventListener("input", () => { pub.dirty[key] = true; renderBar(); });

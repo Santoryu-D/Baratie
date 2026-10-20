@@ -321,7 +321,7 @@ func (s *Server) pubPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Champs acceptés : ceux de la page d'upload du site, rien d'autre.
-	allowed := map[string]bool{"categoryId": true, "description": true, "descriptionFormat": true, "title": true, "releaseName": true, "nfo": true, "language": true, "season": true, "tmdbUrl": true, "noTmdb": true, "anonymous": true, "exclusive": true, "teamRelease": true, "posterUrl": true, "creator": true}
+	allowed := map[string]bool{"categoryId": true, "description": true, "descriptionFormat": true, "title": true, "releaseName": true, "nfo": true, "language": true, "season": true, "tmdbUrl": true, "noTmdb": true, "anonymous": true, "exclusive": true, "teamRelease": true, "posterUrl": true, "creator": true, "virusTotalUrl": true}
 	fields := map[string]string{"rightsDeclared": "true", "sessionId": "d3x-" + time.Now().UTC().Format("20060102")}
 	for k, v := range in.Fields {
 		if allowed[k] {
