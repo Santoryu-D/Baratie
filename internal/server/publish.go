@@ -52,14 +52,20 @@ func (s *Server) v3xClient() (*v3x.Client, error) {
 	return s.v, nil
 }
 
-// apiFail transmet une erreur du site avec son code HTTP.
+// apiFail transmet une erreur du site avec son code HTTP. Jamais de 401 vers
+// la page : pour elle, 401 veut dire « session D3X expirée » (retour
+// CoprinusComatus, 20/10/26 : une clé sans le droit « Upload » affichait
+// « La session a expiré » sur Publier et Lot au lieu de la vraie raison).
 func apiFail(w http.ResponseWriter, err error) {
 	var ae *v3x.APIError
 	if errors.As(err, &ae) {
 		status := ae.Status
 		if status == http.StatusUnauthorized || status == http.StatusForbidden {
-			// La clé n'a peut-être pas le droit « Upload ».
-			writeJSON(w, status, map[string]string{"error": ae.Code, "message": "V3X refuse : ta clé API doit avoir le droit « Upload » (Réglages ▸ Intégrations)"})
+			msg := "V3X refuse : ta clé API doit avoir le droit « Upload » (sur V3X : Paramètres ▸ Intégrations)"
+			if status == http.StatusForbidden && ae.Code != "" && ae.Code != "forbidden" && ae.Code != "unauthorized" {
+				msg = ae.Error()
+			}
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": msg, "code": ae.Code})
 			return
 		}
 		writeJSON(w, status, map[string]string{"error": ae.Code})

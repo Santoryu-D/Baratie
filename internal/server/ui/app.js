@@ -76,11 +76,13 @@ function toast(msg, kind) {
 async function api(path, body) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const r = await fetch(path, opt);
-  if (r.status === 401) {
+  const data = await r.json().catch(() => ({}));
+  // Seul le refus de session de D3X lui-même ouvre ce bandeau ; un autre 401
+  // est une erreur comme les autres.
+  if (r.status === 401 && data.error === "session") {
     $("#session").classList.remove("hidden");
     throw new Error("session");
   }
-  const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || "erreur " + r.status);
   return data;
 }
