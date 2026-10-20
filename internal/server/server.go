@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -197,7 +198,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "session"})
 			return
 		}
-		s.lastSeen.Store(time.Now().UnixNano())
+		// Première venue de la page : notée dans le journal, pour distinguer une
+		// fenêtre restée vide d'une page chargée mais pas affichée (Luci, 21/10/26).
+		if s.lastSeen.Swap(time.Now().UnixNano()) == 0 {
+			log.Println("page de D3X ouverte")
+		}
 	}
 	h := w.Header()
 	h.Set("X-Frame-Options", "DENY")
