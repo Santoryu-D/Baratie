@@ -16,7 +16,7 @@ const TABS = [
   { id: "done", label: "Déjà en seed pour V3X", statuses: ["seeding", "in_client", "on_v3x"], empty: "Aucun torrent V3X dans ce client pour l'instant." },
   { id: "renamed", label: "Noms différents", statuses: ["renamed"], selectable: true, empty: "", note: "Mêmes fichiers que sur V3X, sous d'autres noms. D3X ajoute la release V3X à l'arrêt, donne à ses fichiers les noms de ta copie dans le client, puis vérifie : elle ne démarre qu'à 100 %. Rien n'est créé, déplacé ni renommé sur ton disque." },
   { id: "none", label: "Pas sur V3X", statuses: ["none"], selectable: true, empty: "", note: "Ces releases n'existent pas sur V3X : de bonnes candidates à un upload. « Publier » ouvre la fiche d'une release ; coches-en plusieurs pour les passer au crible du Lot." },
-  { id: "other", label: "Autres", statuses: ["partial", "error", "removed"], empty: "" },
+  { id: "other", label: "Autres", statuses: ["partial", "error", "removed", "missing"], empty: "" },
 ];
 
 const STATUS = {
@@ -31,6 +31,7 @@ const STATUS = {
   none: ["Pas sur V3X", ""],
   partial: ["Téléchargé en partie", ""],
   error: ["Illisible", "bad"],
+  missing: ["Absente du disque", "bad"],
   removed: ["Retiré du client", ""],
 };
 

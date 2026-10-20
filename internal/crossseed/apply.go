@@ -156,6 +156,12 @@ func (e *Engine) addOne(ctx context.Context, r *Row) (string, string) {
 		// noms sur le disque.
 		return e.addRenamed(ctx, env, *tg, r)
 	}
+	// Ta copie a disparu du disque (supprimée, déplacée par un outil de
+	// médiathèque) alors que le client la croit complète : la vérification
+	// tomberait à 0 %. On le dit au lieu d'ajouter.
+	if exists, supported, err := tg.Client.Lookup(ctx, r.contentPath); err == nil && supported && !exists {
+		return StMissing, missingDetail
+	}
 	if hash, err := e.AddAndVerify(ctx, *tg, env.Cfg, r.Key, m.ID, raw, save); err != nil {
 		switch {
 		case errors.Is(err, ErrInClient):
@@ -325,6 +331,20 @@ func (e *Engine) step(ctx context.Context, q client.Client, h string, byHash map
 		if !due {
 			return
 		}
+		// Copie absente du disque : inutile de relancer, on le dit.
+		e.mu.Lock()
+		cp := ""
+		if r := e.rows[w.Key]; r != nil {
+			cp = r.contentPath
+		}
+		e.mu.Unlock()
+		if cp != "" {
+			if exists, supported, err := q.Lookup(ctx, cp); err == nil && supported && !exists {
+				set(StFailed, missingDetail+" Retire cet ajout du client.")
+				journal.Add(journal.Event{Kind: "crossseed_failed", Name: w.Name, InfoHash: h, ID: w.ID, Detail: w.Detail})
+				return
+			}
+		}
 		if tries < maxRechecks {
 			_ = q.Recheck(ctx, h)
 			e.mu.Lock()
@@ -336,6 +356,9 @@ func (e *Engine) step(ctx context.Context, q client.Client, h string, byHash map
 		journal.Add(journal.Event{Kind: "crossseed_failed", Name: w.Name, InfoHash: h, ID: w.ID, Detail: w.Detail})
 	}
 }
+
+// missingDetail : ta copie n'est plus là où le client la voit.
+const missingDetail = "ta copie n'est plus à cet endroit (supprimée, ou déplacée par un outil de médiathèque) alors que ton client la croit complète. Si elle a été rangée ailleurs, la Médiathèque de D3X la retrouve."
 
 // Rythme de la surveillance des vérifications (raccourci dans les tests).
 var (

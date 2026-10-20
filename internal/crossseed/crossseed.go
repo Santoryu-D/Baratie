@@ -44,6 +44,9 @@ const (
 	StSeeding  = "seeding"   // vérifié à 100 %, démarré
 	StFailed   = "failed"    // vérification incomplète : laissé à l'arrêt
 	StRemoved  = "removed"   // retiré du client (fichiers intacts)
+	// Ta copie n'est plus sur le disque (supprimée ou déplacée) alors que le
+	// client la croit complète : rien à ajouter (retour de V3x0r, 21/10/26).
+	StMissing = "missing"
 )
 
 // Domaines de V3X : un torrent qui annonce déjà chez nous est ignoré.
