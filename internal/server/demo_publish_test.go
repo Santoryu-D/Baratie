@@ -81,7 +81,7 @@ func (d *demoPub) handle(w http.ResponseWriter, r *http.Request) bool {
 	switch {
 	case r.URL.Path == "/api/d3x/context":
 		js(map[string]interface{}{
-			"user": map[string]interface{}{"username": "membre-demo", "role": "uploader", "canHtml": false, "anonymousDefault": false,
+			"user": map[string]interface{}{"username": "membre-demo", "role": "uploader", "canHtml": true, "anonymousDefault": false,
 				"team": map[string]interface{}{"name": "Équipe Démo", "tag": "DEMO", "tagAlt": nil, "banner": "[center][b]Équipe Démo[/b][/center]", "nfoAscii": nil}},
 			"categories": []map[string]interface{}{
 				{"id": 1, "name": "Films", "slug": "films", "children": []map[string]interface{}{{"id": 11, "name": "Film", "slug": "films-videos-film"}, {"id": 12, "name": "Animation", "slug": "films-videos-animation"}}},

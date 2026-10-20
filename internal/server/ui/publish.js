@@ -4,6 +4,7 @@
 // Tout texte venu d'une release ou du site passe par textContent, sauf l'aperçu
 // de la présentation : c'est le HTML rendu par V3X lui-même (le même que sur le
 // site), et la politique de sécurité de la page bloque tout script en ligne.
+// Une présentation écrite en HTML s'affiche dans un cadre isolé, sans scripts.
 
 const pub = {
   ctx: null, // contexte du membre (catégories, équipe, langues, modèles)
@@ -21,6 +22,7 @@ const pub = {
   timer: null,
   shown: false,
   published: false,
+  format: "standard", // standard (BBCode) ou html, si V3X l'autorise au membre
 };
 
 const ERRORS = {
@@ -110,6 +112,47 @@ async function loadCtx() {
   $("#team-opt").classList.toggle("hidden", !team);
   if (team) $("#team-label").textContent = "Release de ma team (" + team.name + ")";
   $("#f-anon").checked = !!(pub.ctx.user && pub.ctx.user.anonymousDefault);
+  // Présentation en HTML : même règle que le site (uploadeur confirmé), le
+  // choix ne s'affiche qu'à ceux qui y ont droit (demande de Luci, 21/10/26).
+  $("#fmt").classList.toggle("hidden", !canHtml());
+  setFormat(canHtml() ? savedFormat() : "standard");
+}
+
+function canHtml() {
+  return !!(pub.ctx && pub.ctx.user && pub.ctx.user.canHtml);
+}
+
+function savedFormat() {
+  try {
+    return localStorage.getItem("d3x-pub-format") === "html" ? "html" : "standard";
+  } catch {
+    return "standard";
+  }
+}
+
+// La barre de mise en forme et le raccourci Ctrl+B écrivent du BBCode : cachés
+// en HTML. La présentation générée par le site est en BBCode : elle ne remplit
+// pas l'éditeur en HTML, et « Régénérer » repasse en BBCode.
+function setFormat(f) {
+  pub.format = f === "html" && canHtml() ? "html" : "standard";
+  const html = pub.format === "html";
+  for (const [id, on] of [["#fmt-bb", !html], ["#fmt-html", html]]) {
+    $(id).setAttribute("aria-checked", String(on));
+    $(id).setAttribute("aria-selected", String(on));
+  }
+  $("#toolbar").classList.toggle("hidden", html);
+  $("#f-desc").setAttribute("aria-label", html ? "Présentation (HTML)" : "Présentation (BBCode)");
+  $("#f-desc").spellcheck = !html;
+  previewSoon(0);
+}
+
+function chooseFormat(f) {
+  setFormat(f);
+  try {
+    localStorage.setItem("d3x-pub-format", pub.format);
+  } catch {
+    // stockage indisponible : le choix vaut pour cette page
+  }
 }
 
 function categoryBySlug(slug) {
@@ -236,6 +279,7 @@ function resetForm() {
   $("#tmdb-results").replaceChildren();
   $("#tmdb-picked").classList.add("hidden");
   $("#preview").replaceChildren();
+  $("#preview").classList.remove("html-prev");
   $("#pub-error").classList.add("hidden");
   $("#name-sugg").classList.add("hidden");
   $("#name-tokens").replaceChildren();
@@ -484,7 +528,7 @@ function applyFiche(f, force) {
   setField("#f-title", "title", f.title, force);
   if (!pub.dirty.team || force) $("#f-team").checked = !!f.teamRelease;
   setField("#f-nfo", "nfo", f.nfo, force);
-  if (!pub.dirty.desc || force) {
+  if ((!pub.dirty.desc || force) && pub.format !== "html") {
     $("#f-desc").value = f.presentation || "";
     previewSoon(0);
   }
@@ -665,8 +709,14 @@ function previewSoon(delay) {
 async function renderPreview() {
   const seq = ++pub.previewSeq;
   const bb = $("#f-desc").value;
+  const html = pub.format === "html";
+  $("#preview").classList.toggle("html-prev", html && !!bb.trim());
   if (!bb.trim()) {
     $("#preview").replaceChildren(el("p", "muted", "La présentation s'affichera ici."));
+    return;
+  }
+  if (html) {
+    htmlPreview(bb);
     return;
   }
   try {
@@ -677,6 +727,52 @@ async function renderPreview() {
     if (seq !== pub.previewSeq || e.message === "session") return;
     $("#preview").replaceChildren(el("p", "bad", "Aperçu indisponible : " + e.message));
   }
+}
+
+// Aperçu d'une présentation HTML, rendu comme sur V3X : un cadre isolé où aucun
+// script ne tourne (sandbox sans allow-scripts, et sa propre politique de
+// sécurité), sans référent, liens http des images passés en https comme le
+// fait le site. allow-same-origin ne sert qu'à mesurer la hauteur du contenu.
+const HTML_PREVIEW_CSS =
+  ":root{color-scheme:dark}" +
+  "body{margin:0;padding:14px 16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#c9c9d4;background:transparent;font-size:14px;line-height:1.6}" +
+  "a{color:#ff6b4a}img{max-width:100%;max-height:480px;width:auto;height:auto;object-fit:contain;border-radius:8px}" +
+  "table{border-collapse:collapse}td,th{border:1px solid #333;padding:4px 8px}" +
+  "h1,h2,h3,h4{color:#eee}code,pre{background:#111;border-radius:6px;padding:2px 6px;font-family:ui-monospace,monospace}" +
+  "pre{padding:10px;overflow:auto}details{margin:6px 0}summary{cursor:pointer;color:#ff6b4a}" +
+  "html,body{min-height:0 !important;height:auto !important}";
+
+function htmlPreview(src) {
+  const body = src.replace(/(\b(?:src|srcset|poster)\s*=\s*["']?\s*|url\(\s*["']?)http:\/\//gi, "$1https://");
+  const doc =
+    '<!doctype html><html><head><meta charset="utf-8">' +
+    "<meta http-equiv=\"Content-Security-Policy\" content=\"upgrade-insecure-requests; default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'\">" +
+    '<meta name="referrer" content="no-referrer"><style>' + HTML_PREVIEW_CSS + "</style></head><body>" + body + "</body></html>";
+  let f = $("#preview").querySelector("iframe");
+  if (!f) {
+    f = document.createElement("iframe");
+    f.setAttribute("sandbox", "allow-same-origin");
+    f.setAttribute("referrerpolicy", "no-referrer");
+    f.title = "Aperçu de la présentation";
+    f.addEventListener("load", () => fitFrame(f));
+    $("#preview").replaceChildren(f);
+  }
+  f.srcdoc = doc;
+}
+
+// Le cadre prend la hauteur de son contenu, et la suit quand les images
+// arrivent ou qu'un bloc <details> s'ouvre.
+function fitFrame(f) {
+  const d = f.contentDocument;
+  if (!d || !d.body) return;
+  const measure = () => {
+    const h = Math.max(d.body.offsetHeight, d.documentElement.offsetHeight) + 4;
+    if (h > 4) f.style.height = h + "px";
+  };
+  measure();
+  const RO = (f.contentWindow && f.contentWindow.ResizeObserver) || window.ResizeObserver;
+  if (RO) new RO(measure).observe(d.body);
+  d.addEventListener("toggle", () => setTimeout(measure, 0), true);
 }
 
 function edTab(prev) {
@@ -725,7 +821,7 @@ function fields() {
   const f = {
     categoryId: leaf ? String(leaf.id) : "",
     description: $("#f-desc").value,
-    descriptionFormat: "standard",
+    descriptionFormat: pub.format === "html" && canHtml() ? "html" : "standard",
     title: $("#f-title").value.trim(),
     releaseName: $("#f-name").value.trim(),
     nfo: $("#f-nfo").value,
@@ -910,10 +1006,12 @@ function bindPublish() {
   }
   $("#f-team").addEventListener("change", () => { pub.dirty.team = true; loadFicheSoon(); });
   $("#f-tpl").addEventListener("change", () => loadFiche(false));
-  $("#regen").addEventListener("click", () => { pub.dirty.desc = false; loadFiche(false); });
+  $("#regen").addEventListener("click", () => { pub.dirty.desc = false; setFormat("standard"); loadFiche(false); });
+  $("#fmt-bb").addEventListener("click", () => chooseFormat("standard"));
+  $("#fmt-html").addEventListener("click", () => chooseFormat("html"));
   $("#f-desc").addEventListener("input", () => { pub.dirty.desc = true; previewSoon(); });
   $("#f-desc").addEventListener("keydown", (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
+    if (!(e.ctrlKey || e.metaKey) || pub.format === "html") return;
     const k = e.key.toLowerCase();
     if (k === "b" || k === "i" || k === "u") {
       e.preventDefault();

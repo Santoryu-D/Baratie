@@ -287,6 +287,10 @@
         <div class="editor-head">
           <label for="f-desc">Présentation</label>
           <div class="row">
+            <div class="fmt-ed hidden" id="fmt" role="radiogroup" aria-label="Format de la présentation">
+              <button class="tab small" id="fmt-bb" role="radio" aria-checked="true" aria-selected="true">BBCode</button>
+              <button class="tab small" id="fmt-html" role="radio" aria-checked="false" aria-selected="false" title="Présentation écrite en HTML (réservé sur V3X aux uploadeurs confirmés)">HTML</button>
+            </div>
             <select id="f-tpl" aria-label="Modèle de présentation"></select>
             <button class="btn small" id="regen" title="Refaire la présentation à partir de la fiche (tes retouches seront perdues)">Régénérer</button>
             <div class="tabs-ed" role="tablist">
