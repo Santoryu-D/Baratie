@@ -98,10 +98,20 @@ type Row struct {
 	// Client : le client qui a cette copie (identifiant), et son nom.
 	Client     string `json:"client,omitempty"`
 	ClientName string `json:"clientName,omitempty"`
+	// Alts : les autres copies fusionnées dans cette ligne (un torrent par
+	// tracker, souvent sur des liens physiques). Publier et le Lot prennent
+	// la première que D3X sait lire (exodius19, 21/10/26).
+	Alts []RowCopy `json:"-"`
 
 	hash        string // info-hash de la copie dans son client
 	contentPath string
 	sig         *Sig
+}
+
+// RowCopy : une copie de plus d'une ligne, dans son client.
+type RowCopy struct {
+	Client string
+	Path   string
 }
 
 // Progress décrit l'analyse en cours.
@@ -496,6 +506,7 @@ func (e *Engine) runScan(ctx context.Context) error {
 		}
 		if f := firstOf[r.Match.ID]; f != nil {
 			f.Copies += r.Copies
+			f.Alts = append(append(f.Alts, RowCopy{Client: r.Client, Path: r.Path}), r.Alts...)
 			delete(rows, r.Key)
 			continue
 		}
@@ -513,6 +524,7 @@ func (e *Engine) runScan(ctx context.Context) error {
 		}
 		if f := sameRelease[r.sig.ContentHash]; f != nil {
 			f.Copies += r.Copies
+			f.Alts = append(append(f.Alts, RowCopy{Client: r.Client, Path: r.Path}), r.Alts...)
 			delete(rows, r.Key)
 			continue
 		}

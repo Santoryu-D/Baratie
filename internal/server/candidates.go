@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -219,16 +220,46 @@ func (s *Server) rowsLocal(w http.ResponseWriter, r *http.Request) {
 	out := map[string]localPath{}
 	for _, row := range s.engine.Rows() {
 		if want[row.Key] && row.Path != "" {
-			var rules []pathmap.Rule
-			s.mu.Lock()
-			if cc := s.cfg.Client(row.Client); cc != nil {
-				rules = cc.PathMap
-			}
-			s.mu.Unlock()
-			out[row.Key] = s.resolve(ctx, rules, row.Path)
+			out[row.Key] = s.resolveCopies(ctx, append([]crossseed.RowCopy{{Client: row.Client, Path: row.Path}}, row.Alts...))
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// resolveCopies : la première copie que D3X sait lire. Les copies d'origine
+// passent avant celles d'un dossier de liens d'outil de cross-seed : c'est
+// sur elles que la release publiée partira en seed (exodius19, 21/10/26 :
+// D3X ne lisait pas /VIDEO/cross-seed-links/…, l'original était ailleurs).
+func (s *Server) resolveCopies(ctx context.Context, copies []crossseed.RowCopy) localPath {
+	sort.SliceStable(copies, func(i, j int) bool { return !crossSeedDir(copies[i].Path) && crossSeedDir(copies[j].Path) })
+	var first localPath
+	for i, c := range copies {
+		var rules []pathmap.Rule
+		s.mu.Lock()
+		if cc := s.cfg.Client(c.Client); cc != nil {
+			rules = cc.PathMap
+		}
+		s.mu.Unlock()
+		lp := s.resolve(ctx, rules, c.Path)
+		if lp.Path != "" {
+			return lp
+		}
+		if i == 0 {
+			first = lp
+		}
+	}
+	return first
+}
+
+// crossSeedDir : le chemin passe par un dossier de liens d'outil de cross-seed.
+func crossSeedDir(p string) bool {
+	l := strings.ToLower(strings.ReplaceAll(p, `\`, "/"))
+	for _, k := range []string{"cross-seed", "crossseed", "cross_seed"} {
+		if strings.Contains(l, k) {
+			return true
+		}
+	}
+	return false
 }
 
 // batchEntries : un lot fait de releases choisies (au lieu d'un dossier).
