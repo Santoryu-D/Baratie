@@ -19,12 +19,21 @@ import (
 func (s *Server) linkFiles(ctx context.Context, rules []pathmap.Rule, base string, pairs []links.Pair, remove bool) error {
 	s.mu.Lock()
 	ssh := s.ssh
+	symbolic := s.cfg.Links.Symbolic
 	s.mu.Unlock()
+	if symbolic {
+		// Le lien contient le chemin tel que le client le voit : c'est lui
+		// qui le suit pour seeder.
+		pairs = append([]links.Pair(nil), pairs...)
+		for i := range pairs {
+			pairs[i].Target = pairs[i].Src
+		}
+	}
 	localBase := pathmap.FromClient(base, rules)
 	if st, err := os.Stat(localBase); err == nil && st.IsDir() {
 		lp := make([]links.Pair, len(pairs))
 		for i, p := range pairs {
-			lp[i] = links.Pair{Src: pathmap.FromClient(p.Src, rules), Dst: pathmap.FromClient(p.Dst, rules), Size: p.Size}
+			lp[i] = links.Pair{Src: pathmap.FromClient(p.Src, rules), Dst: pathmap.FromClient(p.Dst, rules), Size: p.Size, Target: p.Target}
 		}
 		if remove {
 			return links.Remove(localBase, lp)

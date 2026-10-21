@@ -244,6 +244,34 @@ type Match struct {
 	// de résurrection (Prime jetons, une fois, après 24 h de seed).
 	Dead  bool `json:"dead,omitempty"`
 	Prime int  `json:"prime,omitempty"`
+	// Gone (Kind « gone ») : aucune fiche en ligne, mais une fiche du même
+	// contenu a été retirée, remplacée ou archivée (issue GitHub #1, peplade).
+	Gone *Gone `json:"gone,omitempty"`
+}
+
+// Gone : la fiche V3X retirée d'un contenu. Reason n'est donnée qu'à son
+// propre uploadeur (Own), comme dans Mes uploads sur le site.
+type Gone struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // removed, trumped, archived
+	Own    bool   `json:"own,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// Text : la phrase montrée au membre.
+func (g *Gone) Text() string {
+	verb := "retirée"
+	switch g.Status {
+	case "trumped":
+		verb = "remplacée par une meilleure version"
+	case "archived":
+		verb = "archivée"
+	}
+	s := "une fiche V3X de ce contenu a été " + verb
+	if g.Own && strings.TrimSpace(g.Reason) != "" {
+		s += " (ta fiche, motif : " + strings.TrimSpace(g.Reason) + ")"
+	}
+	return s
 }
 
 // MatchBatchSize est le nombre maximal d'empreintes par appel.
@@ -253,8 +281,9 @@ const MatchBatchSize = 500
 func (c *Client) MatchBatch(ctx context.Context, r *Retry, items []MatchItem) (map[string]*Match, error) {
 	var res struct {
 		Results []struct {
-			Key   string `json:"key"`
-			Match *Match `json:"match"`
+			Key     string `json:"key"`
+			Match   *Match `json:"match"`
+			Removed *Gone  `json:"removed"`
 		} `json:"results"`
 		ReseedPrime int `json:"reseedPrime"`
 	}
@@ -265,6 +294,9 @@ func (c *Client) MatchBatch(ctx context.Context, r *Retry, items []MatchItem) (m
 	for _, x := range res.Results {
 		if x.Match != nil && x.Match.Dead {
 			x.Match.Prime = res.ReseedPrime
+		}
+		if x.Match == nil && x.Removed != nil {
+			x.Match = &Match{Kind: "gone", Name: x.Removed.Name, Gone: x.Removed}
 		}
 		out[x.Key] = x.Match
 	}

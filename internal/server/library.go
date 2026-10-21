@@ -82,18 +82,19 @@ func (s *Server) libTarget() *config.ClientConfig {
 func (s *Server) libraryGet(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	folders := append([]config.LibFolder{}, s.cfg.Library...)
-	on, target := s.cfg.Links.On, ""
+	on, target, symbolic := s.cfg.Links.On, "", s.cfg.Links.Symbolic
 	links := false
 	if cc := s.libTarget(); cc != nil {
 		target, links = cc.ID, on && strings.TrimSpace(cc.LinksDir) != ""
 	}
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"state":   s.engine.Library(),
-		"rows":    s.engine.LibraryRows(),
-		"folders": folders,
-		"links":   links,
-		"client":  target,
+		"state":    s.engine.Library(),
+		"rows":     s.engine.LibraryRows(),
+		"folders":  folders,
+		"links":    links,
+		"symbolic": symbolic,
+		"client":   target,
 	})
 }
 

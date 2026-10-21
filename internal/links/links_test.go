@@ -3,6 +3,7 @@ package links
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -78,5 +79,49 @@ func TestMakeAllOrNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(base, "R")); !os.IsNotExist(err) {
 		t.Fatal("un lien est resté après l'échec")
+	}
+}
+
+// Liens symboliques (copie en lecture seule, 12a3 21/10/26) : le lien contient
+// le chemin donné (celui que voit le client), se lit comme le fichier, et un
+// retrait ne touche jamais la copie ni un lien qui vise autre chose.
+func TestSymbolicLinks(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "nfs", "Saw VII.mkv")
+	_ = os.MkdirAll(filepath.Dir(src), 0o755)
+	if err := os.WriteFile(src, []byte("donnees"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(dir, "liens")
+	_ = os.MkdirAll(base, 0o755)
+	dst := filepath.Join(base, "Saw.VII.2010", "Saw.VII.2010.mkv")
+	pairs := []Pair{{Src: src, Dst: dst, Size: 7, Target: src}}
+	if err := Make(base, pairs); err != nil {
+		if strings.Contains(err.Error(), "mode développeur") {
+			t.Skip("liens symboliques refusés par ce Windows : " + err.Error())
+		}
+		t.Fatal(err)
+	}
+	if got, err := os.Readlink(dst); err != nil || got != src {
+		t.Fatalf("contenu du lien = %q, %v", got, err)
+	}
+	if b, err := os.ReadFile(dst); err != nil || string(b) != "donnees" {
+		t.Fatalf("lecture par le lien : %q, %v", b, err)
+	}
+	other := []Pair{{Src: src, Dst: dst, Size: 7, Target: filepath.Join(dir, "ailleurs.mkv")}}
+	if err := Remove(base, other); err == nil {
+		t.Fatal("un lien qui vise autre chose ne doit pas être retiré")
+	}
+	if err := Remove(base, pairs); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(dst); !os.IsNotExist(err) {
+		t.Fatal("lien encore là")
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Fatal("la copie a été touchée")
+	}
+	if _, err := os.Stat(filepath.Dir(dst)); !os.IsNotExist(err) {
+		t.Fatal("dossier vide laissé")
 	}
 }

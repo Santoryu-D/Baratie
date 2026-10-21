@@ -75,6 +75,9 @@ window.musicSetup = () => {
   $("#mb-picked").classList.add("hidden");
   $("#f-nomb").checked = false;
   $("#mb-state").textContent = "";
+  $("#dg-results").replaceChildren();
+  // Pochette Discogs : seulement avec un jeton Discogs dans les Réglages.
+  $("#dg-box").classList.toggle("hidden", !on || !(ui.state && ui.state.discogs));
   if (!on) return;
   const a = pub.job.audio;
   const loc = $("#mb-local");
@@ -236,7 +239,69 @@ window.musicNameFix = (box) => {
   box.append(b);
 };
 
+// ---------- Pochette Discogs (CoprinusComatus, 21/10/26) ----------
+
+function dgQuery() {
+  const q = $("#mb-q").value.trim();
+  if (q && !/musicbrainz\.org/i.test(q)) return q;
+  if (pub.mb) return [pub.mb.artist, pub.mb.title].filter(Boolean).join(" ");
+  const a = pub.job && pub.job.audio;
+  return (a && [a.artist, a.title].filter(Boolean).join(" ")) || (pub.job ? pub.job.name : "");
+}
+
+async function dgSearch() {
+  const ul = $("#dg-results");
+  const q = dgQuery();
+  if (!q) return toast("Écris l'artiste et l'album dans la recherche MusicBrainz.", "bad");
+  ul.replaceChildren(el("li", "muted small", "Recherche sur Discogs…"));
+  try {
+    const r = await api("/ui/discogs/search?q=" + encodeURIComponent(q));
+    ul.replaceChildren();
+    if (!r.results || !r.results.length) return ul.append(el("li", "muted small", "Rien sur Discogs pour « " + q + " »."));
+    for (const c of r.results) {
+      const li = el("li");
+      const b = el("button", "mb-item");
+      b.type = "button";
+      let cover;
+      if (c.thumb) {
+        cover = el("img");
+        cover.src = c.thumb;
+        cover.alt = "";
+        cover.loading = "lazy";
+      } else cover = el("span", "noposter", "♪");
+      const meta = el("span", "tmdb-meta");
+      meta.append(el("b", null, c.title), el("span", "muted small", [c.year, c.country, (c.format || []).join(", "), (c.label || []).join(", ")].filter(Boolean).join(" · ")));
+      b.append(cover, meta);
+      b.addEventListener("click", () => dgPick(c, b));
+      li.append(b);
+      ul.append(li);
+    }
+  } catch (e) {
+    ul.replaceChildren();
+    if (e.message !== "session") toast(e.message, "bad");
+  }
+}
+
+// La pochette choisie est hébergée sur V3X puis placée en tête de la présentation.
+async function dgPick(c, btn) {
+  btn.disabled = true;
+  toast("Pochette : récupération sur Discogs et envoi sur V3X…");
+  try {
+    const r = await api("/ui/discogs/cover", { id: c.id });
+    const ta = $("#f-desc");
+    ta.value = "[center][img]" + r.url + "[/img][/center]\n" + ta.value;
+    pub.dirty.desc = true;
+    previewSoon(0);
+    $("#dg-results").replaceChildren();
+    toast("Pochette ajoutée en tête de la présentation.", "ok");
+  } catch (e) {
+    btn.disabled = false;
+    if (e.message !== "session") toast(e.message, "bad");
+  }
+}
+
 function bindMusic() {
+  $("#dg-go").addEventListener("click", dgSearch);
   $("#mb-go").addEventListener("click", mbGo);
   $("#mb-q").addEventListener("keydown", (e) => { if (e.key === "Enter") mbGo(); });
   $("#f-nomb").addEventListener("change", () => {

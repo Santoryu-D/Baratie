@@ -16,7 +16,7 @@ const TABS = [
   { id: "done", label: "Déjà en seed pour V3X", statuses: ["seeding", "in_client", "on_v3x"], empty: "Aucun torrent V3X dans ce client pour l'instant." },
   { id: "renamed", label: "Noms différents", statuses: ["renamed"], selectable: true, empty: "", note: "Mêmes fichiers que sur V3X, sous d'autres noms. D3X ajoute la release V3X à l'arrêt, donne à ses fichiers les noms de ta copie dans le client, puis vérifie : elle ne démarre qu'à 100 %. Rien n'est créé, déplacé ni renommé sur ton disque." },
   { id: "none", label: "Pas sur V3X", statuses: ["none"], selectable: true, empty: "", note: "Ces releases n'existent pas sur V3X : de bonnes candidates à un upload. « Publier » ouvre la fiche d'une release ; coches-en plusieurs pour les passer au crible du Lot." },
-  { id: "other", label: "Autres", statuses: ["same_video", "partial", "error", "removed", "missing"], empty: "" },
+  { id: "other", label: "Autres", statuses: ["same_video", "gone_v3x", "partial", "error", "removed", "missing"], empty: "" },
 ];
 
 const STATUS = {
@@ -30,6 +30,7 @@ const STATUS = {
   renamed: ["Noms différents", "warn"],
   none: ["Pas sur V3X", ""],
   same_video: ["Même vidéo sur V3X", ""],
+  gone_v3x: ["Retirée de V3X", "warn"],
   partial: ["Téléchargé en partie", ""],
   error: ["Illisible", "bad"],
   missing: ["Absente du disque", "bad"],
@@ -373,11 +374,16 @@ function fillSettings() {
   renderClients();
   $("#f-cat").value = s.category || "";
   $("#f-pubcat").value = s.pubCategory || "";
+  $("#f-discogs").value = "";
+  $("#f-discogs").placeholder = s.discogs ? "Enregistré (laisse vide pour le garder)" : "facultatif";
+  $("#f-discogs-clear").checked = false;
+  $("#f-discogs-clear-l").classList.toggle("hidden", !s.discogs);
   $("#f-tag").value = s.tag || "";
   $("#f-updates").checked = !!s.checkUpdates;
   $("#f-theme").value = (s.appearance && s.appearance.uiTheme) || "";
   buildSwatches((s.appearance && s.appearance.uiAccent) || "");
   $("#l-on").checked = !!(s.links && s.links.on);
+  $("#l-sym").checked = !!(s.links && s.links.symbolic);
   const w = s.watch || {};
   $("#w-on").checked = !!w.on;
   $("#w-min").value = String([15, 30, 60, 180].includes(w.minutes) ? w.minutes : 30);
@@ -754,11 +760,13 @@ async function saveSettings(ev) {
       clients: edit.clients.map(clientPayload),
       category: $("#f-cat").value,
       pubCategory: $("#f-pubcat").value,
+      discogsToken: $("#f-discogs").value.trim(),
+      discogsClear: $("#f-discogs-clear").checked,
       tag: $("#f-tag").value,
       checkUpdates: $("#f-updates").checked,
       uiTheme: $("#f-theme").value,
       uiAccent: (($("#f-accent").querySelector('[aria-checked="true"]') || {}).dataset || {}).accent || "",
-      links: { on: $("#l-on").checked },
+      links: { on: $("#l-on").checked, symbolic: $("#l-sym").checked },
       watch: {
         on: $("#w-on").checked,
         minutes: Number($("#w-min").value) || 30,

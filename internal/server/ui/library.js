@@ -185,8 +185,8 @@ function libRender() {
   const how = $("#lib-how");
   how.classList.toggle("warn", !d.links);
   how.textContent = d.links
-    ? "Ajout par liens physiques, dans ton dossier de liens : les fichiers de ta médiathèque ne sont jamais touchés."
-    : "Ajout en renommant dans ton client : rien ne bouge sur le disque, mais le torrent pointera sur les fichiers de ta médiathèque. Ne le supprime jamais « avec ses fichiers ». Les liens physiques (Réglages) évitent ça.";
+    ? "Ajout par liens " + (d.symbolic ? "symboliques" : "physiques") + ", dans ton dossier de liens : les fichiers de ta médiathèque ne sont jamais touchés."
+    : "Ajout en renommant dans ton client : rien ne bouge sur le disque, mais le torrent pointera sur les fichiers de ta médiathèque. Ne le supprime jamais « avec ses fichiers ». Les liens (Réglages) évitent ça.";
 
   const rows = d.rows || [];
   const keys = new Set(rows.filter((r) => r.status === "add").map((r) => r.key));

@@ -42,6 +42,9 @@ type Config struct {
 	// Catégorie des releases publiées avec D3X (Publier, Lot), si elle doit
 	// différer de celle des cross-seeds (demande d'Ekhstaz). Vide = Category.
 	PubCategory string `json:"pubCategory,omitempty"`
+	// DiscogsToken : jeton personnel Discogs (facultatif), pour chercher une
+	// pochette quand MusicBrainz n'en a pas. Jamais renvoyé à la page.
+	DiscogsToken string `json:"discogsToken,omitempty"`
 
 	// Vérifier au lancement qu'une nouvelle version existe (GitHub).
 	CheckUpdates bool `json:"checkUpdates"`
@@ -167,6 +170,10 @@ type LibFolder struct {
 type Links struct {
 	On  bool   `json:"on"`
 	Dir string `json:"dir,omitempty"`
+	// Symbolic : liens symboliques au lieu de liens physiques, pour une copie
+	// qu'on ne peut pas lier physiquement (partage en lecture seule, autre
+	// disque ; 12a3, 21/10/26). Le lien vise le fichier tel que le client le voit.
+	Symbolic bool `json:"symbolic,omitempty"`
 }
 
 // Watch : la surveillance du client.

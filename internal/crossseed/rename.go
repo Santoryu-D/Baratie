@@ -297,7 +297,7 @@ func (e *Engine) addRenamed(ctx context.Context, env *Env, tg Target, r *Row) (s
 	q, cfg := tg.Client, env.Cfg
 	link := e.linkerFor(cfg, tg)
 	if !q.CanRename() && link == nil {
-		return StRenamed, q.Kind() + " ne sait pas renommer les fichiers d'un torrent : ajout impossible (ou active les liens physiques dans les réglages)"
+		return StRenamed, q.Kind() + " ne sait pas renommer les fichiers d'un torrent : ajout impossible (ou active les liens dans les réglages)"
 	}
 	m := r.Match
 	raw, err := env.V3X.DownloadTorrent(ctx, &v3x.Retry{}, m.ID)
@@ -399,7 +399,7 @@ func (e *Engine) addLinked(ctx context.Context, tg Target, cfg *config.Config, r
 		}
 	}
 	if err := link(ctx, tg.PathMap, dir, lp, false); err != nil {
-		return StRenamed, "liens physiques : " + err.Error()
+		return StRenamed, "liens : " + err.Error()
 	}
 	hash, err := e.AddAndVerify(ctx, tg, cfg, r.Key, r.Match.ID, raw, dir)
 	if err != nil {

@@ -44,6 +44,9 @@ const (
 	StSeeding  = "seeding"   // vérifié à 100 %, démarré
 	StFailed   = "failed"    // vérification incomplète : laissé à l'arrêt
 	StRemoved  = "removed"   // retiré du client (fichiers intacts)
+	// Pas de fiche en ligne, mais V3X a retiré (remplacé, archivé) une fiche du
+	// même contenu : pas proposée à la publication (issue GitHub #1, peplade).
+	StGone = "gone_v3x"
 	// Ta copie n'est plus sur le disque (supprimée ou déplacée) alors que le
 	// client la croit complète : rien à ajouter (retour de V3x0r, 21/10/26).
 	StMissing = "missing"
@@ -461,6 +464,11 @@ func (e *Engine) runScan(ctx context.Context) error {
 			if r == nil || m == nil {
 				continue
 			}
+			if m.Kind == "gone" {
+				r.Status = StGone
+				r.Detail = m.Gone.Text() + " : D3X ne la propose pas à la publication (Publier reste possible si la raison ne s'applique plus)"
+				continue
+			}
 			r.Match = m
 			switch {
 			case m.Kind == "self":
@@ -477,7 +485,7 @@ func (e *Engine) runScan(ctx context.Context) error {
 					r.Detail = "mêmes fichiers sous d'autres noms : D3X peut l'ajouter sous les noms de ta copie, sans rien toucher sur le disque"
 				} else if e.linkerFor(cfg, t) != nil {
 					r.CanAdd = true
-					r.Detail = "mêmes fichiers sous d'autres noms : D3X peut la ranger dans ton dossier de liens, ses fichiers étant des liens physiques vers ta copie (aucune place en plus)"
+					r.Detail = "mêmes fichiers sous d'autres noms : D3X peut la ranger dans ton dossier de liens, ses fichiers étant des liens vers ta copie (aucune place en plus)"
 				} else {
 					r.Detail = "mêmes fichiers sous d'autres noms : " + t.Client.Kind() + " ne sait pas renommer les fichiers d'un torrent"
 				}
@@ -721,7 +729,7 @@ func (e *Engine) statusOf(r *Row) string {
 
 // Groupes de la page (un onglet chacun) : à l'intérieur d'un groupe, l'ordre
 // ne dépend pas du statut, pour que les lignes ne sautent pas pendant l'ajout.
-var statusGroup = map[string]int{StAdd: 0, StQueued: 0, StChecking: 0, StFailed: 0, StSeeding: 1, StInClient: 1, StOnV3X: 1, StRenamed: 2, StSameVideo: 3, StNone: 3, StPartial: 4, StError: 4, StRemoved: 4}
+var statusGroup = map[string]int{StAdd: 0, StQueued: 0, StChecking: 0, StFailed: 0, StSeeding: 1, StInClient: 1, StOnV3X: 1, StRenamed: 2, StSameVideo: 3, StNone: 3, StPartial: 4, StError: 4, StRemoved: 4, StGone: 4}
 
 // Rows renvoie les lignes, les plus utiles d'abord : à ajouter, et parmi
 // elles les releases les moins seedées sur V3X (celles qui ont besoin de toi).

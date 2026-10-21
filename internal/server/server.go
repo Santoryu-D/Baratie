@@ -310,12 +310,14 @@ type stateOut struct {
 	Clients      []clientOut `json:"clients"`
 	Category     string      `json:"category"`
 	PubCategory  string      `json:"pubCategory"`
+	Discogs      bool        `json:"discogs"` // jeton Discogs enregistré
 	Tag          string      `json:"tag"`
 	CheckUpdates bool        `json:"checkUpdates"`
 	LastDir      string      `json:"lastDir,omitempty"`
 	Watch        surveyOut   `json:"watch"`
 	Links        struct {
-		On bool `json:"on"`
+		On       bool `json:"on"`
+		Symbolic bool `json:"symbolic"`
 	} `json:"links"`
 	SSH struct {
 		Configured bool   `json:"configured"`
@@ -358,9 +360,10 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	o.Clients = s.clientsOut()
 	o.Category, o.Tag, o.CheckUpdates = s.cfg.Category, s.cfg.Tag, s.cfg.CheckUpdates
 	o.PubCategory = s.cfg.PubCategory
+	o.Discogs = s.cfg.DiscogsToken != ""
 	o.LastDir = s.cfg.LastDir
 	o.Watch = s.surveyState(s.cfg.Watch)
-	o.Links.On = s.cfg.Links.On
+	o.Links.On, o.Links.Symbolic = s.cfg.Links.On, s.cfg.Links.Symbolic
 	if s.opts.Remote {
 		o.Mode = "server"
 		if s.opts.Managed == "docker" {
@@ -395,9 +398,12 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		V3XKey       string `json:"v3xKey"`
-		Category     string `json:"category"`
-		PubCategory  string `json:"pubCategory"`
+		V3XKey      string `json:"v3xKey"`
+		Category    string `json:"category"`
+		PubCategory string `json:"pubCategory"`
+		// DiscogsToken : vide = inchangé ; DiscogsClear le retire.
+		DiscogsToken string `json:"discogsToken"`
+		DiscogsClear bool   `json:"discogsClear"`
 		Tag          string `json:"tag"`
 		CheckUpdates bool   `json:"checkUpdates"`
 		UITheme      string `json:"uiTheme"`
@@ -415,7 +421,8 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		// Links : absent = inchangé ; le dossier des liens est celui de
 		// chaque client.
 		Links *struct {
-			On bool `json:"on"`
+			On       bool `json:"on"`
+			Symbolic bool `json:"symbolic"`
 		} `json:"links"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<18)).Decode(&in); err != nil {
@@ -443,6 +450,11 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	}
 	c.Category = strings.TrimSpace(in.Category)
 	c.PubCategory = strings.TrimSpace(in.PubCategory)
+	if t := strings.TrimSpace(in.DiscogsToken); t != "" {
+		c.DiscogsToken = t
+	} else if in.DiscogsClear {
+		c.DiscogsToken = ""
+	}
 	c.Tag = strings.TrimSpace(in.Tag)
 	c.CheckUpdates = in.CheckUpdates
 	c.UITheme, c.UIAccent = "", ""
@@ -459,10 +471,10 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.Links.On && !dir {
 			s.mu.Unlock()
-			fail(w, http.StatusBadRequest, errors.New("liens physiques : indique le dossier des liens, tel que ton client le voit"))
+			fail(w, http.StatusBadRequest, errors.New("liens : indique le dossier des liens, tel que ton client le voit"))
 			return
 		}
-		c.Links.On = in.Links.On
+		c.Links.On, c.Links.Symbolic = in.Links.On, in.Links.Symbolic
 	}
 	restartWatch := false
 	if in.Watch != nil {

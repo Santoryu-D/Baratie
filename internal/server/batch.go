@@ -23,6 +23,8 @@ type batchEntry struct {
 func (s *Server) routesBatch() {
 	s.mux.HandleFunc("GET /ui/batch/list", s.batchList)
 	s.mux.HandleFunc("POST /ui/batch/decision", s.batchDecision)
+	s.routesPrepared()
+	s.routesDiscogs()
 }
 
 func (s *Server) batchList(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +86,11 @@ func (s *Server) batchDecision(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err)
 		return
 	}
-	journal.Add(journal.Event{Kind: in.Kind, Name: in.Name, Path: src.Key(in.Path), Detail: in.Detail, ID: in.ID})
+	key := src.Key(in.Path)
+	// Remise en attente ou écartée : la fiche gardée pour le lot ne sert plus.
+	if in.Kind == "batch_reset" || in.Kind == "batch_ignored" {
+		dropPrepared(key)
+	}
+	journal.Add(journal.Event{Kind: in.Kind, Name: in.Name, Path: key, Detail: in.Detail, ID: in.ID})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

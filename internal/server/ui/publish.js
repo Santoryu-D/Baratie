@@ -22,6 +22,7 @@ const pub = {
   timer: null,
   shown: false,
   published: false,
+  fromLot: "", // release du Lot ouverte par « Revoir » (sinon vide)
   format: "standard", // standard (BBCode) ou html, si V3X l'autorise au membre
 };
 
@@ -233,7 +234,9 @@ async function browse(path) {
 
 // ---------- tâche ----------
 
-async function choose(path, source) {
+// opts.fromLot : ouverte par « Revoir » depuis le Lot, la fiche peut y être
+// gardée pour que le lot la publie telle quelle.
+async function choose(path, source, opts) {
   if (source && source !== pub.source) {
     pub.source = source;
     pub.dir = "";
@@ -242,6 +245,7 @@ async function choose(path, source) {
   try {
     const j = await api("/ui/pub/start", { path, source: pub.source });
     resetForm();
+    pub.fromLot = opts && opts.fromLot ? path : "";
     pub.job = j;
     pub.published = false;
     $("#pub-pick").classList.add("hidden");
@@ -258,6 +262,12 @@ async function choose(path, source) {
   } catch (e) {
     if (e.message !== "session") toast(e.message, "bad");
   }
+}
+
+// Même phrase que D3X côté serveur (v3x.Gone.Text).
+function goneText(g) {
+  const verb = { trumped: "remplacée par une meilleure version", archived: "archivée" }[g.status] || "retirée";
+  return "une fiche V3X de ce contenu a été " + verb + (g.own && g.reason ? " (ta fiche, motif : " + g.reason + ")" : "");
 }
 
 function stripExt(name, single) {
@@ -349,6 +359,12 @@ function renderJob() {
     a.rel = "noopener";
     dup.append(a, document.createTextNode(". Pas besoin de la publier : seede-la depuis l'onglet Cross-seed."));
     dup.classList.add("bad");
+    dup.classList.remove("hidden");
+  } else if (j.gone) {
+    // Fiche retirée du même contenu (issue GitHub #1) : republier reste
+    // possible, mais en connaissance de cause.
+    dup.textContent = "Attention : " + goneText(j.gone) + ". Republie-la seulement si la raison ne s'applique plus.";
+    dup.classList.remove("bad");
     dup.classList.remove("hidden");
   } else {
     dup.classList.add("hidden");
@@ -851,6 +867,28 @@ function renderBar() {
   else txt = "Tout est prêt.";
   $("#pub-bar-txt").textContent = txt;
   go.disabled = miss.length > 0 || j.state !== "ready";
+  // Garder pour le lot : la fiche complète suffit, le .torrent peut finir plus tard.
+  const keep = $("#pub-keep");
+  keep.classList.toggle("hidden", !pub.fromLot);
+  keep.disabled = miss.length > 0 || j.state === "publishing";
+}
+
+async function keepForLot() {
+  const f = fields();
+  const leaf = currentCategory();
+  const work = isAlbum()
+    ? (pub.mb ? pub.mb.title + (pub.mb.date ? " (" + pub.mb.date.slice(0, 4) + ")" : "") : "")
+    : (pub.tmdb ? pub.tmdb.title + (pub.tmdb.year ? " (" + pub.tmdb.year + ")" : "") : "");
+  const summary = [leaf ? leaf.name : "", work, f.releaseName].filter(Boolean).join(" · ");
+  try {
+    await api("/ui/batch/prepare", { path: pub.fromLot, source: pub.source, name: pub.job.name, summary, fields: f });
+    pub.fromLot = "";
+    await cancelJob();
+    toast("Fiche gardée : le lot la publiera telle quelle.", "ok");
+    setView("batch");
+  } catch (e) {
+    if (e.message !== "session") toast(e.message, "bad");
+  }
 }
 
 function fields() {
@@ -1058,6 +1096,7 @@ function bindPublish() {
   $("#ed-tab-edit").addEventListener("click", () => edTab(false));
   $("#ed-tab-prev").addEventListener("click", () => edTab(true));
   $("#pub-go").addEventListener("click", askPublish);
+  $("#pub-keep").addEventListener("click", keepForLot);
   $("#f-rights").addEventListener("change", () => { $("#pub-confirm-yes").disabled = !$("#f-rights").checked; });
   $("#pub-confirm-no").addEventListener("click", () => $("#pub-confirm").close());
   $("#pub-confirm-yes").addEventListener("click", doPublish);

@@ -1,6 +1,8 @@
 // Package links range une release sous d'autres noms sans rien copier : ses
 // fichiers sont des liens physiques vers ceux d'une copie existante (même
-// disque, aucune place en plus, la copie n'est pas touchée).
+// disque, aucune place en plus, la copie n'est pas touchée), ou des liens
+// symboliques quand la copie ne peut pas être liée physiquement (partage en
+// lecture seule, autre disque).
 //
 // Garde-fous : jamais rien d'écrasé (un lien ne se crée que là où il n'y a
 // rien), tout reste sous le dossier des liens, et un retrait n'efface un
@@ -15,11 +17,14 @@ import (
 	"strings"
 )
 
-// Pair : Dst devient un lien physique vers Src (chemins absolus).
+// Pair : Dst devient un lien physique vers Src (chemins absolus). Avec Target,
+// Dst devient un lien symbolique dont le contenu est Target : le chemin de Src
+// tel que le client torrent le voit (c'est lui qui suit le lien).
 type Pair struct {
-	Src  string `json:"src"`
-	Dst  string `json:"dst"`
-	Size int64  `json:"size"`
+	Src    string `json:"src"`
+	Dst    string `json:"dst"`
+	Size   int64  `json:"size"`
+	Target string `json:"target,omitempty"`
 }
 
 // inside : p est-il sous base (après nettoyage) ?
@@ -70,17 +75,29 @@ func Make(base string, pairs []Pair) error {
 			}
 			dirs = append(dirs, dir)
 		}
-		if err := os.Link(p.Src, p.Dst); err != nil {
+		var err error
+		if p.Target != "" {
+			err = os.Symlink(p.Target, p.Dst)
+		} else {
+			err = os.Link(p.Src, p.Dst)
+		}
+		if err != nil {
 			undo()
-			return explain(err)
+			return explain(err, p.Target != "")
 		}
 		made = append(made, p)
 	}
 	return nil
 }
 
-func explain(err error) error {
+func explain(err error, symbolic bool) error {
 	s := strings.ToLower(err.Error())
+	if symbolic {
+		if strings.Contains(s, "privilege") || strings.Contains(s, "privilège") {
+			return errors.New("Windows refuse les liens symboliques : active le mode développeur (Paramètres ▸ Système ▸ Pour les développeurs) ou lance D3X en administrateur")
+		}
+		return errors.New("lien symbolique impossible : " + err.Error())
+	}
 	switch {
 	case strings.Contains(s, "cross-device"), strings.Contains(s, "not same device"), strings.Contains(s, "different disk"), strings.Contains(s, "pas le même"):
 		return errors.New("le dossier des liens doit être sur le même disque que tes fichiers")
@@ -110,13 +127,22 @@ func Remove(base string, pairs []Pair) error {
 }
 
 func removeIfSame(p Pair) error {
-	src, err := os.Stat(p.Src)
-	if err != nil {
-		return errors.New("source introuvable, « " + p.Dst + " » laissé en place")
-	}
 	dst, err := os.Lstat(p.Dst)
 	if err != nil {
 		return nil // déjà parti
+	}
+	// Lien symbolique : retiré s'il vise bien ce fichier (son contenu est le
+	// chemin donné à sa création), sans rien demander à la source, qui peut
+	// être un partage débranché.
+	if dst.Mode()&os.ModeSymlink != 0 {
+		if t, err := os.Readlink(p.Dst); err == nil && p.Target != "" && t == p.Target {
+			return os.Remove(p.Dst)
+		}
+		return errors.New("« " + p.Dst + " » n'est pas un lien vers ta copie : laissé en place")
+	}
+	src, err := os.Stat(p.Src)
+	if err != nil {
+		return errors.New("source introuvable, « " + p.Dst + " » laissé en place")
 	}
 	if !os.SameFile(src, dst) {
 		return errors.New("« " + p.Dst + " » n'est pas un lien vers ta copie : laissé en place")

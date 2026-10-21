@@ -16,7 +16,7 @@ Clients pris en charge : **qBittorrent**, **Transmission**, **Deluge** et **rTor
 
 ## Ce que fait D3X, et ce qu'il ne fait jamais
 
-- **Il ne modifie ni ne supprime aucun de tes fichiers.** Pour publier, il lit tes fichiers (hachage, MediaInfo) ; pour le reste, tout passe par l'interface web de ton client. Sur une seedbox, il n'écrit que son agent dans `~/.d3x` et son cache de hachage dans `~/.config/D3X`. Seule exception, si tu l'actives : les [liens physiques](#les-liens-physiques), créés dans un dossier que tu choisis, sans jamais rien écraser.
+- **Il ne modifie ni ne supprime aucun de tes fichiers.** Pour publier, il lit tes fichiers (hachage, MediaInfo) ; pour le reste, tout passe par l'interface web de ton client. Sur une seedbox, il n'écrit que son agent dans `~/.d3x` et son cache de hachage dans `~/.config/D3X`. Seule exception, si tu l'actives : les [liens](#les-liens) (physiques ou symboliques), créés dans un dossier que tu choisis, sans jamais rien écraser.
 - **Il ne télécharge rien à ta place.** Chaque release est ajoutée *à l'arrêt*, ton client vérifie les données, et D3X ne la démarre que si elle est complète à 100 %. Sinon elle reste arrêtée, avec un bouton pour la retirer (fichiers intacts ; avec rTorrent, D3X l'arrête et te laisse la retirer, car rTorrent peut être réglé pour effacer les données au retrait).
 - **Cross-seed : il n'envoie à V3X que des empreintes.** Pour chaque torrent de ton client, D3X calcule chez toi deux empreintes (SHA-256 des chemins et des tailles, puis des tailles seules). Aucun nom de fichier, aucun chemin, aucun info-hash d'un autre tracker ne quitte ta machine.
 - **Correspondance exacte seulement.** Une release n'est proposée que si ses fichiers ont exactement les mêmes tailles que sur V3X, fichier par fichier, et les mêmes noms (sinon elle va dans « Noms différents »), jamais sur la seule taille totale ni sur une ressemblance de nom. Le .torrent reçu de V3X est revérifié avant l'ajout, et le client vérifie chaque octet avant tout démarrage.
@@ -36,6 +36,7 @@ L'analyse range tes releases en onglets :
 - **Autres** :
   - **Même vidéo sur V3X** : le plus gros fichier de ta copie (200 Mio ou plus) existe à l'octet près dans une fiche V3X, sous une autre forme (nom refait, .nfo en plus, dossier au lieu d'un fichier seul). Rien ne manque au site, rien à publier.
   - **Absente du disque** : le client croit la copie complète, mais ses fichiers ne sont plus là (supprimés, ou déplacés par un outil de médiathèque). D3X ne l'ajoute pas.
+  - **Retirée de V3X** : aucune fiche en ligne, mais V3X a retiré (ou remplacé, archivé) une fiche de ce contenu. D3X ne la propose pas à la publication ; le motif s'affiche si c'était ta fiche. Publier reste possible si la raison ne s'applique plus.
 
 Une release que tu ne veux pas seeder pour l'instant : **Ignorer** la retire de la liste et de « Tout cocher », et elle ne revient plus à chaque analyse. Ça marche dans « À ajouter », « Noms différents » et « Pas sur V3X » ; « Les réafficher » la retrouve. La liste des releases ignorées reste sur l'appareil.
 
@@ -51,7 +52,7 @@ Tes films sur une seedbox dans Deluge, tes livres sur ce PC dans qBittorrent ? R
 - **Mon seed et la surveillance** regardent tous les clients : une release en seed dans l'un d'eux est en seed. Si un client ne répond pas, ce qu'il seede n'est pas compté comme absent, et aucune alerte de hit and run n'en découle.
 - **Publier** : la release part en seed dans le client dont les dossiers couvrent celui de la release, sinon celui qui seede déjà dans ce dossier, sinon celui qui tourne sur la machine des fichiers, sinon le premier. Tu peux en choisir un autre jusqu'à l'envoi.
 - **Médiathèque** : tu choisis le client qui reçoit ses ajouts (le premier par défaut).
-- **Liens physiques** : un dossier de liens par client, tel que ce client le voit.
+- **Liens** : un dossier de liens par client, tel que ce client le voit.
 
 Avec un seul client, rien ne change : mêmes écrans, aucune étiquette.
 
@@ -76,19 +77,20 @@ Une médiathèque renomme les fichiers et ne garde pas le .torrent : D3X les ret
 1. Indique tes dossiers de films et de séries, sur ce PC ou sur ta seedbox.
 2. D3X liste les fichiers et envoie à V3X **leurs tailles seules** (les gros fichiers). V3X répond par les releases qui ont un fichier de cette taille.
 3. Pour chaque candidate, D3X lit son .torrent et cherche **chacun de ses fichiers** dans ta médiathèque, puis lit quelques morceaux de chaque fichier sur ton disque et compare leur empreinte à celle du .torrent. Une taille identique ne suffit jamais.
-4. Tu coches ce que tu veux seeder. L'ajout se fait par [liens physiques](#les-liens-physiques) si tu les as activés (ta médiathèque n'est jamais touchée), sinon en renommant dans ton client, comme pour les « noms différents ».
+4. Tu coches ce que tu veux seeder. L'ajout se fait par [liens](#les-liens) si tu les as activés (ta médiathèque n'est jamais touchée), sinon en renommant dans ton client, comme pour les « noms différents ».
 
 Une release dont il manque un fichier (souvent un petit .nfo) est signalée « incomplète » : ton client ne pourrait pas la vérifier à 100 %, elle n'est pas proposée.
 
 ![La médiathèque : deux films renommés retrouvés sur V3X, vérifiés morceau par morceau sur le disque, prêts à être ajoutés](docs/images/mediatheque.png)
 
-## Les liens physiques
+## Les liens
 
-Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et D3X refuse de renommer quand un nom pourrait déjà exister. Dans Réglages ▸ Liens physiques, choisis un **dossier de liens**, tel que ton client le voit (un par client si tu en as plusieurs) : D3X y range la release V3X, chacun de ses fichiers étant un lien physique vers le fichier de ta copie.
+Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et D3X refuse de renommer quand un nom pourrait déjà exister. Dans Réglages ▸ Liens, choisis un **dossier de liens**, tel que ton client le voit (un par client si tu en as plusieurs) : D3X y range la release V3X, chacun de ses fichiers étant un lien physique vers le fichier de ta copie.
 
 - Aucune place en plus : un lien physique est le même fichier sous un autre nom.
 - Ta copie n'est pas touchée, et rien n'est jamais écrasé : un lien ne se crée que là où il n'y a rien. Si l'ajout échoue, les liens sont retirés, et D3X n'efface un lien que s'il pointe bien vers ta copie.
 - Le dossier doit exister, sur le même disque que tes fichiers, et D3X doit le voir : sur ce PC, par un partage avec les dossiers du client, ou sur ta seedbox par son agent.
+- **Liens symboliques** (case à cocher au même endroit) : pour une copie qu'on ne peut pas lier physiquement, comme un partage NFS ou SMB en lecture seule ou un autre disque. Chaque lien vise le fichier tel que ton client le voit, et le dossier des liens peut être n'importe où, tant que ton client peut y écrire. Ne déplace pas ta copie ensuite : le lien pointerait dans le vide. Sous Windows, il faut le mode développeur.
 
 ## Publier, en mieux
 
@@ -99,6 +101,7 @@ Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et
 - **Présentation en HTML** pour les membres que V3X y autorise (même règle que le site) : choix BBCode ou HTML au-dessus de l'éditeur, retenu sur l'appareil, et aperçu tel que le site l'affichera.
 - **Rapport VirusTotal** demandé pour les catégories où V3X l'exige (applications, jeux), compté dans « Il manque » tant qu'il n'est pas rempli.
 - **Image du PC** : un bouton de la barre d'outils envoie une image de ton ordinateur (pochette, capture), hébergée sur V3X avec ta clé, et l'insère dans la présentation.
+- **Pochette Discogs** : pour un album sans pochette sur MusicBrainz, avec ton jeton Discogs (Réglages ; il se crée sur discogs.com ▸ Paramètres ▸ Développeurs). Tu choisis l'édition, D3X récupère sa pochette en grand, l'héberge sur V3X et la place en tête de la présentation.
 - **Seed automatique**, même quand ton client tourne sur un NAS ou dans Docker : D3X devine où le client voit tes fichiers, d'après les torrents qu'il seede déjà.
 - Fichiers cachés et aperçus de médiathèque écartés (`.DS_Store`, `*.trickplay`, `extrafanart`…), liens symboliques suivis sans boucle, fichier encore en cours d'écriture détecté.
 
@@ -135,6 +138,8 @@ Seedbox sous Linux x86_64 ou arm64.
 Chaque sous-dossier ou fichier d'un dossier est une release. D3X la publie seule **seulement** si l'œuvre TMDB est trouvée avec certitude (même titre, même année à un an près, bon type), que la catégorie est connue, que le MediaInfo est lu et que V3X n'annonce aucun refus. Jamais pour un exécutable, une collection sans fichier à sa racine ou une release au-delà du plafond de taille. Le reste part « à revoir », avec la raison, et s'ouvre dans Publier d'un clic.
 
 Simulation par défaut, plafond de publications, pause entre deux publications, arrêt propre. Les décisions sont gardées : un lot interrompu reprend où il en était, ce qui est publié n'est plus proposé. Pour recommencer avec d'autres options, « Tout remettre en attente » vide l'onglet ouvert (À revoir, Simulé, Ignoré, Erreur) sans rien publier ni effacer.
+
+Une release « à revoir » s'ouvre dans Publier avec **Revoir** : corrige la fiche, puis publie-la tout de suite, ou **Garder pour le lot**. Elle passe alors dans l'onglet **Prête**, et le prochain lot la publie avec ta fiche, telle quelle, sans rien redécider.
 
 ![Un lot en simulation : les releases mises de côté, chacune avec sa raison](docs/images/lot.png)
 

@@ -60,6 +60,7 @@ type Job struct {
 	// Album : tags et qualité des pistes, quand la release en a.
 	Audio     *audio.Album `json:"audio,omitempty"`
 	Duplicate *v3x.Match   `json:"duplicate,omitempty"`
+	Gone      *v3x.Gone    `json:"gone,omitempty"`
 	State     string       `json:"state"`
 	Hashed    int64        `json:"hashed"`
 	FromCache bool         `json:"fromCache"`
@@ -156,7 +157,13 @@ func (m *Manager) Start(src source.Source, where string) (*Job, error) {
 	defer cancel()
 	// Doublon : mêmes fichiers (ou mêmes tailles au-delà de 100 Mio) déjà sur V3X.
 	if res, err := v.MatchBatch(ctx, nil, []v3x.MatchItem{{Key: "0", ContentHash: plan.ContentHash, SizeHash: plan.SizeHash, Total: plan.Total}}); err == nil {
-		j.Duplicate = res["0"]
+		// Fiche retirée : pas un doublon (le site accepte de republier ce
+		// contenu), mais la page le signale et le lot ne la publie pas seul.
+		if d := res["0"]; d != nil && d.Kind == "gone" {
+			j.Gone = d.Gone
+		} else {
+			j.Duplicate = d
+		}
 	}
 
 	// Le client qui seedera, et où il voit le dossier parent.

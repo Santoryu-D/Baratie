@@ -20,6 +20,7 @@ const lot = {
 // États du lot, dans l'ordre des onglets.
 const LOT_TABS = [
   ["pending", "En attente", "Pas encore traitées par un lot."],
+  ["ready", "Prête", "Corrigée dans Publier et gardée : le lot la publiera avec ta fiche, telle quelle. « Revoir » pour la modifier."],
   ["review", "À revoir", "Le lot n'a pas osé : la raison est sur la ligne. « Revoir » l'ouvre dans Publier."],
   ["simulated", "Simulé", "Le lot l'aurait publiée. Décoche Simulation pour le faire pour de vrai."],
   ["published", "Publié", "Publiée sur V3X et mise en seed."],
@@ -27,7 +28,7 @@ const LOT_TABS = [
   ["ignored", "Ignoré", "Écartée à la main : les lots la sautent."],
   ["error", "Erreur", "Illisible ou refusée par V3X."],
 ];
-const LOT_STATE_OF_KIND = { published: "published", batch_review: "review", batch_simulated: "simulated", batch_duplicate: "duplicate", batch_ignored: "ignored", batch_error: "error" };
+const LOT_STATE_OF_KIND = { published: "published", batch_ready: "ready", batch_review: "review", batch_simulated: "simulated", batch_duplicate: "duplicate", batch_ignored: "ignored", batch_error: "error" };
 
 // ---------- ressemblance des titres ----------
 
@@ -62,7 +63,7 @@ function certainWork(results, title, year, isSeries) {
 function lotEntries(list, hits) {
   return list.map((e) => {
     const st = e.error ? "error" : (e.last && LOT_STATE_OF_KIND[e.last.kind]) || "pending";
-    return { ...e, state: st, detail: e.error || (e.last && e.last.detail) || "", checked: st === "pending" || st === "review" || st === "simulated", requests: (hits && hits[e.path]) || null };
+    return { ...e, state: st, detail: e.error || (e.last && e.last.detail) || "", checked: st === "pending" || st === "ready" || st === "review" || st === "simulated", requests: (hits && hits[e.path]) || null };
   });
 }
 
@@ -200,7 +201,7 @@ function lotRender() {
 // « Vidéos et albums seulement » laissé coché, aucun moyen de recommencer).
 // Une release illisible le reste : son erreur vient de la lecture du dossier.
 function lotResettable() {
-  if (!["review", "simulated", "ignored", "error"].includes(lot.tab)) return [];
+  if (!["ready", "review", "simulated", "ignored", "error"].includes(lot.tab)) return [];
   return lot.entries.filter((e) => e.state === lot.tab && !e.error);
 }
 
@@ -255,18 +256,18 @@ function lotRow(e) {
   tr.append(name, el("td", "num", e.size ? fmtSize(e.size) : ""));
   const st = el("td");
   const label = (LOT_TABS.find((t) => t[0] === e.state) || [e.state, e.state])[1];
-  const kind = { review: "warn", simulated: "add", published: "ok", duplicate: "ok", error: "bad" }[e.state] || "";
+  const kind = { ready: "add", review: "warn", simulated: "add", published: "ok", duplicate: "ok", error: "bad" }[e.state] || "";
   st.append(el("span", "pill " + kind, e.path === lot.current ? "En cours…" : label));
   if (e.detail) st.append(el("div", "sub", e.detail));
   tr.append(st);
   const act = el("td");
   const box = el("div", "b-actions");
-  if (e.state === "review" || e.state === "simulated" || e.state === "pending") {
+  if (e.state === "review" || e.state === "simulated" || e.state === "pending" || e.state === "ready") {
     const r = el("button", "btn small", "Revoir");
     r.type = "button";
-    r.title = "Ouvrir dans Publier pour finir la fiche à la main";
+    r.title = "Ouvrir dans Publier pour finir la fiche à la main, puis la publier ou la garder pour le lot";
     r.disabled = lot.running;
-    r.addEventListener("click", () => { setView("publish"); choose(e.path, lot.source); });
+    r.addEventListener("click", () => { setView("publish"); choose(e.path, lot.source, { fromLot: true }); });
     box.append(r);
   }
   if (e.state !== "published" && e.state !== "duplicate") {
@@ -286,7 +287,7 @@ function lotBar() {
   const show = $("#view-batch") && !$("#view-batch").classList.contains("hidden") && lot.entries.length > 0;
   bar.classList.toggle("hidden", !show);
   if (!show) return;
-  const n = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "review" || e.state === "simulated")).length;
+  const n = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "ready" || e.state === "review" || e.state === "simulated")).length;
   $("#b-bar-txt").textContent = lot.running ? "Lot en cours : " + lot.done + " / " + lot.total : n + (n > 1 ? " releases cochées" : " release cochée");
   $("#b-bar-how").textContent = $("#b-sim").checked ? "Simulation : rien ne sera publié, tu verras ce que le lot ferait." : "Pour de vrai : les releases sûres seront publiées et mises en seed.";
   $("#b-run").classList.toggle("hidden", lot.running);
@@ -340,7 +341,40 @@ async function waitJob(id, done) {
   }
 }
 
+// Release gardée depuis Publier : publiée avec la fiche gardée, sans rien
+// redécider (CoprinusComatus, 21/10/26).
+async function processReady(e, opts) {
+  let p;
+  try {
+    p = await api("/ui/batch/prepared?source=" + lot.source + "&path=" + encodeURIComponent(e.path));
+  } catch (err) {
+    if (err.message === "session") throw err;
+    return decide(e, "review", err.message);
+  }
+  const summary = p.summary || p.fields.releaseName;
+  if (opts.sim) {
+    e.detail = "serait publiée avec ta fiche : " + summary;
+    lotRender();
+    return;
+  }
+  let j = await api("/ui/pub/start", { path: e.path, source: lot.source });
+  const cancel = async () => { try { await api("/ui/pub/" + j.id + "/cancel", {}); } catch (err) { /* rien */ } };
+  if (j.duplicate) {
+    await cancel();
+    return decide(e, "duplicate", "déjà sur V3X : " + j.duplicate.name, j.duplicate.id);
+  }
+  j = await waitJob(j.id, (x) => x.state !== "hashing");
+  if (j.state !== "ready") {
+    await cancel();
+    return decide(e, "error", j.error || "le .torrent n'a pas pu être fabriqué");
+  }
+  if (await publishWith(e, j, p.fields, summary)) {
+    try { await api("/ui/batch/prepared/drop", { path: e.path, source: lot.source }); } catch (err) { /* rien */ }
+  }
+}
+
 async function processEntry(e, opts) {
+  if (e.state === "ready") return processReady(e, opts);
   if (e.exec) return decide(e, "review", "contient un exécutable : jamais publié par un lot");
   if (opts.video && !e.video && !e.audio) return decide(e, "review", "ni vidéo ni album (option « Vidéos et albums seulement »)");
   if (opts.cap > 0 && e.size > opts.cap * 1073741824) return decide(e, "review", "au-delà du plafond de " + opts.cap + " Gio : pas hachée");
@@ -351,6 +385,10 @@ async function processEntry(e, opts) {
   if (j.duplicate) {
     await cancel();
     return decide(e, "duplicate", "déjà sur V3X : " + j.duplicate.name, j.duplicate.id);
+  }
+  if (j.gone) {
+    await cancel();
+    return decide(e, "review", goneText(j.gone) + " : jamais republiée par un lot, « Revoir » si la raison ne s'applique plus");
   }
   // MediaInfo pendant le hachage.
   let mi = "";
@@ -447,13 +485,23 @@ async function processEntry(e, opts) {
   if (album) fields.creator = f.creator || mbw.mb.artist || "";
   if (team) fields.teamRelease = String(!!f.teamRelease);
   if (f.season && cat.slug.indexOf("serie") >= 0) fields.season = f.season;
+  await publishWith(e, j, fields, summary);
+}
+
+// Publie la release du job prêt avec ces champs (fiche du lot ou fiche
+// gardée) ; rend true si V3X l'a acceptée.
+async function publishWith(e, j, fields, summary) {
   try {
     await api("/ui/pub/" + j.id + "/publish", { fields });
   } catch (err) {
-    return decide(e, "error", err.message);
+    await decide(e, "error", err.message);
+    return false;
   }
   j = await waitJob(j.id, (x) => x.state !== "publishing");
-  if (!j.published) return decide(e, "error", pubErr(j.error, j.errorBody));
+  if (!j.published) {
+    await decide(e, "error", pubErr(j.error, j.errorBody));
+    return false;
+  }
   lot.published++;
   e.last = { id: j.published.id };
   e.active = j.published.status === "active";
@@ -466,6 +514,7 @@ async function processEntry(e, opts) {
   e.detail = (j.published.status === "active" ? "publiée" : "en attente de validation") + " · " + summary;
   e.checked = false;
   lotRender();
+  return true;
 }
 
 async function lotRun() {
@@ -475,7 +524,7 @@ async function lotRun() {
   const opts = { sim: $("#b-sim").checked, video: $("#b-video").checked, fixName: $("#b-fixname").checked, cap: Number($("#b-cap").value) || 0, max: Number($("#b-max").value) || 0 };
   // Seulement ce qui est coché ET affiché à l'écran : un dossier apparu entre-temps
   // n'est jamais publié sans avoir été vu.
-  const todo = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "review" || e.state === "simulated"));
+  const todo = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "ready" || e.state === "review" || e.state === "simulated"));
   lot.running = true;
   lot.stop = false;
   lot.done = 0;

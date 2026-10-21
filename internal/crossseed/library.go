@@ -608,7 +608,7 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 			}
 		}
 		if err := link(ctx, tg.PathMap, dir, lp, false); err != nil {
-			return StAdd, "liens physiques : " + err.Error()
+			return StAdd, "liens : " + err.Error()
 		}
 		hash, err := e.AddAndVerify(ctx, *tg, cfg, r.Key, r.Match.ID, r.raw, dir)
 		if err != nil {
@@ -623,10 +623,10 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 			}
 			return StFailed, err.Error()
 		}
-		return StChecking, fmt.Sprintf("liens physiques dans « %s » : ta médiathèque n'est pas touchée", dir)
+		return StChecking, fmt.Sprintf("liens dans « %s » : ta médiathèque n'est pas touchée", dir)
 	}
 	if !q.CanRename() {
-		return StAdd, q.Kind() + " ne sait pas renommer les fichiers d'un torrent : active les liens physiques dans les réglages"
+		return StAdd, q.Kind() + " ne sait pas renommer les fichiers d'un torrent : active les liens dans les réglages"
 	}
 	save := clientCommonDir(cps)
 	if save == "" {
@@ -640,7 +640,7 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 		local = append(local, torrent.File{Path: rel, Size: p.v.Size, Index: i})
 	}
 	if err := renameSafe(pairs, local, save, "", all, diskLookup(ctx, q, save, tg.PathMap)); err != nil {
-		return StAdd, err.Error() + " (ou active les liens physiques)"
+		return StAdd, err.Error() + " (ou active les liens dans les réglages, symboliques pour un partage en lecture seule)"
 	}
 	hash, n, err := e.addAndRename(ctx, *tg, cfg, r.Key, r.Match.ID, r.raw, save, pairs)
 	if err != nil {
