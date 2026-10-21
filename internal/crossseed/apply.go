@@ -277,7 +277,17 @@ func (e *Engine) step(ctx context.Context, q client.Client, h string, byHash map
 		w.Status, w.Detail = status, detail
 		e.mu.Unlock()
 	}
+	e.mu.Lock()
+	if ok {
+		w.MissSince = time.Time{}
+	} else if w.MissSince.IsZero() {
+		w.MissSince = time.Now()
+	}
+	missing := !ok && time.Since(w.MissSince) >= missGrace
+	e.mu.Unlock()
 	switch {
+	case !ok && !missing:
+		// Peut-être un client qui redémarre : on attend avant de conclure.
 	case !ok:
 		set(StRemoved, "retiré du client")
 		e.forget(h)
@@ -365,6 +375,7 @@ var (
 	recheckGap  = 30 * time.Second // avant de relancer une vérification jamais vue
 	maxRechecks = 3
 	endStable   = 20 * time.Second // fin sous 100 % stable avant de conclure
+	missGrace   = 2 * time.Minute  // absent du client aussi longtemps avant de le dire retiré
 )
 
 // Recheck relance la vérification d'un ajout marqué en échec (bouton

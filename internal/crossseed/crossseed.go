@@ -147,9 +147,13 @@ type watch struct {
 	// états intermédiaires pendant une revérification).
 	EndAt       time.Time `json:"endAt,omitempty"`
 	EndProgress float64   `json:"endProgress,omitempty"`
-	Status      string    `json:"status"` // checking, failed
-	Progress    float64   `json:"progress"`
-	Detail      string    `json:"detail,omitempty"`
+	// Absent de la liste du client depuis ce moment : « retiré » seulement
+	// après missGrace (un client qui redémarre répond un temps sans ses
+	// torrents ; exodius19, 21/10/26, Transmission en conteneur).
+	MissSince time.Time `json:"missSince,omitempty"`
+	Status    string    `json:"status"` // checking, failed
+	Progress  float64   `json:"progress"`
+	Detail    string    `json:"detail,omitempty"`
 }
 
 // Engine garde l'état du cross-seed pour la page.

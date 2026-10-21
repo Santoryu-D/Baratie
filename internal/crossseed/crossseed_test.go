@@ -99,6 +99,8 @@ type fakeQbit struct {
 	// Demandes de vérification ignorées (client pas encore prêt), par
 	// info-hash : la vérification ne part qu'à la relance.
 	dropRecheck map[string]int
+	// blank : le client redémarre et répond sans ses torrents (exodius19).
+	blank bool
 }
 
 func (f *fakeQbit) namesOf(h string, raw []byte) map[int]string {
@@ -150,7 +152,7 @@ func (f *fakeQbit) handler(t *testing.T) http.Handler {
 		}
 		out := []qbit.Torrent{}
 		for h, ft := range f.list {
-			if len(want) > 0 && !want[h] {
+			if f.blank || len(want) > 0 && !want[h] {
 				continue
 			}
 			if ft.checkLeft > 0 {
@@ -543,7 +545,7 @@ func waitFor(t *testing.T, ok func() bool) {
 // précédents tournent encore et lisent ces valeurs.
 func TestMain(m *testing.M) {
 	watchEvery, downloadGap = 20*time.Millisecond, 0
-	recheckGap, endStable = 100*time.Millisecond, 60*time.Millisecond
+	recheckGap, endStable, missGrace = 100*time.Millisecond, 60*time.Millisecond, 150*time.Millisecond
 	os.Exit(m.Run())
 }
 
