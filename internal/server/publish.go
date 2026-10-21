@@ -23,6 +23,7 @@ func (s *Server) routesPublish() {
 	s.mux.HandleFunc("POST /ui/pub/start", s.pubStart)
 	s.mux.HandleFunc("GET /ui/pub/context", s.pubContext)
 	s.mux.HandleFunc("GET /ui/pub/tmdb/{kind}", s.pubTMDB)
+	s.mux.HandleFunc("GET /ui/pub/igdb/{kind}", s.pubIGDB)
 	s.mux.HandleFunc("POST /ui/pub/preview", s.pubPreview)
 	s.mux.HandleFunc("POST /ui/pub/image", s.pubImage)
 	s.mux.HandleFunc("GET /ui/bbcode.css", s.pubCSS)
@@ -188,12 +189,32 @@ func (s *Server) pubTMDB(w http.ResponseWriter, r *http.Request) {
 	w.Write(raw)
 }
 
+// pubIGDB relaie la recherche de jeux du site (Nayr, 22/10/26) : la clé de la
+// base jeux reste sur V3X.
+func (s *Server) pubIGDB(w http.ResponseWriter, r *http.Request) {
+	v, err := s.v3xClient()
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	raw, err := v.IGDB(ctx, r.PathValue("kind"), r.URL.Query())
+	if err != nil {
+		apiFail(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write(raw)
+}
+
 func (s *Server) pubFiche(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ReleaseName  string  `json:"releaseName"`
 		MediaInfo    string  `json:"mediainfo"`
 		TmdbRef      *string `json:"tmdbRef"`
 		MbRef        *string `json:"mbRef"`
+		IgdbID       *int64  `json:"igdbId"`
 		CategorySlug *string `json:"categorySlug"`
 		TemplateID   *string `json:"templateId"`
 	}
@@ -212,7 +233,7 @@ func (s *Server) pubFiche(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := v.Fiche(ctx, v3x.FicheRequest{ReleaseName: in.ReleaseName, MediaInfo: in.MediaInfo, TmdbRef: in.TmdbRef, MbRef: in.MbRef, Download: dl, CategorySlug: in.CategorySlug, TemplateID: in.TemplateID})
+	raw, err := v.Fiche(ctx, v3x.FicheRequest{ReleaseName: in.ReleaseName, MediaInfo: in.MediaInfo, TmdbRef: in.TmdbRef, MbRef: in.MbRef, IgdbID: in.IgdbID, Download: dl, CategorySlug: in.CategorySlug, TemplateID: in.TemplateID})
 	if err != nil {
 		apiFail(w, err)
 		return

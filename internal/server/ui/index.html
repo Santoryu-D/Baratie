@@ -258,6 +258,16 @@
             <ul class="mb-results" id="dg-results"></ul>
           </div>
         </div>
+        <div class="field span2 hidden" id="game-field">
+          <label for="game-q">Jeu</label>
+          <div class="row">
+            <input type="text" id="game-q" autocomplete="off" spellcheck="false" placeholder="Titre du jeu (ex. Baldur's Gate 3)">
+            <button class="btn small" id="game-go">Chercher</button>
+          </div>
+          <div class="tmdb-picked hidden" id="game-picked"></div>
+          <p class="hint" id="game-state" aria-live="polite"></p>
+          <ul class="tmdb-results" id="game-results"></ul>
+        </div>
         <div class="field">
           <label for="f-root">Catégorie</label>
           <div class="row"><select id="f-root" aria-label="Catégorie"></select><select id="f-leaf" aria-label="Sous-catégorie"></select></div>

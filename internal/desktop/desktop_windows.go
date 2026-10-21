@@ -55,3 +55,11 @@ func MessageBox(title, text string) {
 func hideConsole(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW
 }
+
+// noConsole : comme hideConsole, sans demander à Windows de cacher la première
+// fenêtre du programme. Pour la fenêtre de D3X : avec Chrome, le navigateur
+// lancé à vide s'arrête, le lancement « --app » devient le navigateur et sa
+// fenêtre, créée cachée, ne s'affichait jamais (22/10/26).
+func noConsole(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000} // CREATE_NO_WINDOW
+}

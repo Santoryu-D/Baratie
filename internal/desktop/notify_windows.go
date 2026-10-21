@@ -5,6 +5,7 @@ package desktop
 import (
 	"errors"
 	"os"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -44,27 +45,39 @@ type notifyIconData struct {
 	BalloonIcon     uintptr
 }
 
+var (
+	trayMu    sync.Mutex
+	trayFound uintptr
+	// Une seule fonction de rappel pour tout D3X : Go n'en crée qu'un nombre
+	// limité par processus, jamais libérées. Avant, chaque notification en
+	// créait une, et D3X se serait arrêté après un millier de notifications.
+	trayCallback = sync.OnceValue(func() uintptr {
+		pid := uint32(os.Getpid())
+		return syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
+			var owner uint32
+			pGetWindowThread.Call(hwnd, uintptr(unsafe.Pointer(&owner)))
+			if owner != pid {
+				return 1
+			}
+			var name [64]uint16
+			pGetClassName.Call(hwnd, uintptr(unsafe.Pointer(&name[0])), uintptr(len(name)))
+			if syscall.UTF16ToString(name[:]) == "SystrayClass" {
+				trayFound = hwnd
+				return 0
+			}
+			return 1
+		})
+	})
+)
+
 // trayWindow : la fenêtre cachée de l'icône de D3X (celle de fyne.io/systray,
 // classe « SystrayClass », dans ce processus).
 func trayWindow() uintptr {
-	pid := uint32(os.Getpid())
-	var found uintptr
-	cb := syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
-		var owner uint32
-		pGetWindowThread.Call(hwnd, uintptr(unsafe.Pointer(&owner)))
-		if owner != pid {
-			return 1
-		}
-		var name [64]uint16
-		pGetClassName.Call(hwnd, uintptr(unsafe.Pointer(&name[0])), uintptr(len(name)))
-		if syscall.UTF16ToString(name[:]) == "SystrayClass" {
-			found = hwnd
-			return 0
-		}
-		return 1
-	})
-	pEnumWindows.Call(cb, 0)
-	return found
+	trayMu.Lock()
+	defer trayMu.Unlock()
+	trayFound = 0
+	pEnumWindows.Call(trayCallback(), 0)
+	return trayFound
 }
 
 func fill(dst []uint16, s string) {

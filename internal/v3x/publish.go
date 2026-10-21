@@ -38,12 +38,25 @@ func (c *Client) TMDB(ctx context.Context, kind string, q url.Values) (json.RawM
 	return raw, err
 }
 
+// IGDB relaie une des routes jeux vidéo du site (search, details).
+func (c *Client) IGDB(ctx context.Context, kind string, q url.Values) (json.RawMessage, error) {
+	switch kind {
+	case "search", "details":
+	default:
+		return nil, fmt.Errorf("route jeux inconnue : %s", kind)
+	}
+	var raw json.RawMessage
+	err := c.doJSON(ctx, nil, http.MethodGet, "/api/d3x/igdb/"+kind+"?"+q.Encode(), nil, &raw)
+	return raw, err
+}
+
 // FicheRequest : de quoi bâtir la fiche.
 type FicheRequest struct {
 	ReleaseName  string        `json:"releaseName"`
 	MediaInfo    string        `json:"mediainfo"`
 	TmdbRef      *string       `json:"tmdbRef,omitempty"`
-	MbRef        *string       `json:"mbRef,omitempty"` // édition MusicBrainz (musique)
+	MbRef        *string       `json:"mbRef,omitempty"`  // édition MusicBrainz (musique)
+	IgdbID       *int64        `json:"igdbId,omitempty"` // jeu vidéo choisi dans la recherche
 	Download     FicheDownload `json:"download"`
 	CategorySlug *string       `json:"categorySlug,omitempty"`
 	TemplateID   *string       `json:"templateId,omitempty"`

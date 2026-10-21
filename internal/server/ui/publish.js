@@ -16,6 +16,7 @@ const pub = {
   mediainfo: "",
   miState: "idle", // idle, running, done, none, error
   tmdb: null, // { type, id, title, year, posterUrl }
+  game: null, // jeu vidéo choisi : { id, name, year, coverUrl }
   dirty: {}, // champs retouchés par le membre : jamais écrasés par la fiche
   ficheSeq: 0,
   previewSeq: 0,
@@ -64,6 +65,7 @@ const WARNINGS = {
   tmdb_missing: "Pas encore de fiche TMDB choisie.",
   tmdb_not_found: "Cette fiche TMDB est introuvable.",
   mb_not_found: "Cette édition MusicBrainz est introuvable.",
+  igdb_not_found: "Ce jeu est introuvable dans la base des jeux vidéo.",
   audio_naming: "Le nom d'une release musicale doit suivre le nommage du site.",
   category_unknown: "Catégorie inconnue sur V3X.",
 };
@@ -185,6 +187,13 @@ function isFilmSeries() {
   return r === "films" || r === "series";
 }
 
+// Jeux vidéo ou Émulation : la recherche de jeux remplace celle de TMDB, comme
+// sur la page d'upload du site.
+function isGame() {
+  const r = $("#f-root").value;
+  return (r === "jeux-video" || r === "emulation") && !isAlbum();
+}
+
 // Rapport VirusTotal exigé par V3X (même règle que le site, lib/virustotal.ts) :
 // applications Windows, macOS, smartphone et « autre », et tous les jeux ; un
 // jeu console seulement s'il contient un exécutable PC (retour de Luci).
@@ -279,8 +288,13 @@ function resetForm() {
   pub.mediainfo = "";
   pub.miState = "idle";
   pub.tmdb = null;
+  pub.game = null;
   pub.dirty = {};
-  for (const id of ["#f-name", "#f-title", "#f-season", "#f-desc", "#f-nfo", "#f-vt", "#tmdb-q"]) $(id).value = "";
+  for (const id of ["#f-name", "#f-title", "#f-season", "#f-desc", "#f-nfo", "#f-vt", "#tmdb-q", "#game-q"]) $(id).value = "";
+  $("#game-results").replaceChildren();
+  $("#game-picked").classList.add("hidden");
+  $("#game-state").textContent = "";
+  $("#game-field").classList.add("hidden");
   $("#f-notmdb").checked = false;
   $("#f-excl").checked = false;
   $("#f-team").checked = false;
@@ -510,8 +524,9 @@ async function loadFiche(force) {
     const f = await api("/ui/pub/" + j.id + "/fiche", {
       releaseName: $("#f-name").value.trim() || stripExt(j.name, j.single),
       mediainfo: pub.mediainfo,
-      tmdbRef: pub.tmdb ? pub.tmdb.type + "/" + pub.tmdb.id : null,
+      tmdbRef: pub.tmdb && !isGame() ? pub.tmdb.type + "/" + pub.tmdb.id : null,
       mbRef: pub.mb ? mbURL(pub.mb) : null,
+      igdbId: isGame() && pub.game ? pub.game.id : null,
       categorySlug: leaf ? leaf.slug : null,
       templateId: $("#f-tpl").value || null,
     });
@@ -539,6 +554,7 @@ function applyFiche(f, force) {
       fillLeaves(found.root.slug, found.leaf ? found.leaf.slug : "");
     }
   }
+  gameSetup();
   setField("#f-lang", "language", f.language, force);
   setField("#f-season", "season", f.season, force);
   setField("#f-title", "title", f.title, force);
@@ -548,7 +564,7 @@ function applyFiche(f, force) {
     $("#f-desc").value = f.presentation || "";
     previewSoon(0);
   }
-  if (!$("#tmdb-q").value && f.tmdbQuery && !pub.tmdb && !isAlbum()) {
+  if (!$("#tmdb-q").value && f.tmdbQuery && !pub.tmdb && !isAlbum() && !isGame()) {
     $("#tmdb-q").value = f.tmdbQuery;
     searchTmdb();
   }
@@ -655,6 +671,93 @@ function pickTmdb(it) {
   p.append(t);
   p.classList.remove("hidden");
   loadFiche();
+}
+
+// ---------- jeux vidéo (Nayr, 22/10/26) ----------
+
+// La recherche de jeux remplace celle de TMDB dans Jeux vidéo et Émulation. À
+// l'entrée dans ces catégories, elle part du nom de la release.
+function gameSetup() {
+  const on = isGame();
+  $("#tmdb-field").classList.toggle("hidden", isAlbum() || on);
+  $("#game-field").classList.toggle("hidden", !on);
+  if (!on || pub.game || $("#game-q").value.trim()) return;
+  const q = (pub.fiche && pub.fiche.tmdbQuery) || (pub.job ? stripExt(pub.job.name, pub.job.single) : "");
+  if (!q) return;
+  $("#game-q").value = q;
+  searchGame();
+}
+
+function gameMeta(it) {
+  return [it.year, (it.platforms || []).join(", ")].filter(Boolean).join(" · ");
+}
+
+function gameCover(url) {
+  if (!url || !/^https:\/\//.test(url)) return el("span", "noposter", "?");
+  const img = el("img");
+  img.src = url;
+  img.alt = "";
+  img.loading = "lazy";
+  return img;
+}
+
+async function searchGame() {
+  const q = $("#game-q").value.trim();
+  if (q.length < 2) return;
+  const ul = $("#game-results");
+  $("#game-state").textContent = "Recherche…";
+  ul.replaceChildren();
+  try {
+    const r = await api("/ui/pub/igdb/search?q=" + encodeURIComponent(q));
+    if (r.configured === false) {
+      $("#game-state").textContent = "La recherche de jeux n'est pas disponible sur V3X pour l'instant : remplis le titre à la main.";
+      return;
+    }
+    const list = (r.results || []).slice(0, 10);
+    $("#game-state").textContent = list.length ? "" : "Aucun jeu trouvé. Essaie le titre seul, sans version ni plateforme.";
+    for (const it of list) {
+      const li = el("li");
+      const b = el("button", "tmdb-item");
+      b.type = "button";
+      const meta = el("span", "tmdb-meta");
+      meta.append(el("b", null, it.name), el("span", "muted", gameMeta(it)));
+      b.append(gameCover(it.coverUrl), meta);
+      b.addEventListener("click", () => pickGame(it));
+      li.append(b);
+      ul.append(li);
+    }
+  } catch (e) {
+    if (e.message !== "session") $("#game-state").textContent = "Recherche de jeux : " + e.message;
+  }
+}
+
+// Le jeu choisi donne le titre, la jaquette et la fiche jeu du site.
+function pickGame(it) {
+  pub.game = { id: it.id, name: it.name, year: it.year, coverUrl: it.coverUrl };
+  $("#game-results").replaceChildren();
+  $("#game-state").textContent = "";
+  const p = $("#game-picked");
+  p.replaceChildren(gameCover(it.coverUrl));
+  const t = el("div");
+  t.append(el("b", null, it.name + (it.year ? " (" + it.year + ")" : "")), el("div", "muted small", gameMeta(it)));
+  const ch = el("button", "link", "Changer");
+  ch.type = "button";
+  ch.addEventListener("click", () => {
+    pub.game = null;
+    p.classList.add("hidden");
+    searchGame();
+    loadFicheSoon();
+  });
+  t.append(ch);
+  p.append(t);
+  p.classList.remove("hidden");
+  loadFiche();
+}
+
+// Jaquette grand format du jeu, quand la fiche reçue est bien celle du jeu choisi.
+function gamePoster() {
+  const g = pub.fiche && pub.fiche.game;
+  return isGame() && pub.game && g && g.id === pub.game.id && g.posterUrl ? g.posterUrl : "";
 }
 
 // ---------- éditeur de présentation ----------
@@ -878,7 +981,9 @@ async function keepForLot() {
   const leaf = currentCategory();
   const work = isAlbum()
     ? (pub.mb ? pub.mb.title + (pub.mb.date ? " (" + pub.mb.date.slice(0, 4) + ")" : "") : "")
-    : (pub.tmdb ? pub.tmdb.title + (pub.tmdb.year ? " (" + pub.tmdb.year + ")" : "") : "");
+    : isGame()
+      ? (pub.game ? pub.game.name + (pub.game.year ? " (" + pub.game.year + ")" : "") : "")
+      : (pub.tmdb ? pub.tmdb.title + (pub.tmdb.year ? " (" + pub.tmdb.year + ")" : "") : "");
   const summary = [leaf ? leaf.name : "", work, f.releaseName].filter(Boolean).join(" · ");
   try {
     await api("/ui/batch/prepare", { path: pub.fromLot, source: pub.source, name: pub.job.name, summary, fields: f });
@@ -905,7 +1010,9 @@ function fields() {
     exclusive: String($("#f-excl").checked),
   };
   if ($("#f-root").value === "series" && $("#f-season").value.trim()) f.season = $("#f-season").value.trim();
-  if (pub.tmdb) f.tmdbUrl = "https://www.themoviedb.org/" + pub.tmdb.type + "/" + pub.tmdb.id;
+  if (pub.tmdb && !isGame()) f.tmdbUrl = "https://www.themoviedb.org/" + pub.tmdb.type + "/" + pub.tmdb.id;
+  // Jeu : la jaquette, comme la page d'upload (affiche de la fiche).
+  if (gamePoster()) f.posterUrl = gamePoster();
   // Musique : le lien MusicBrainz, comme sur la page d'upload (titre, jaquette).
   if (isAlbum() && pub.mb) {
     f.tmdbUrl = mbURL(pub.mb);
@@ -928,7 +1035,9 @@ function askPublish() {
     ["Catégorie", leaf ? leaf.name : ""],
     isAlbum()
       ? ["Album", pub.mb ? pub.mb.title + (pub.mb.date ? " (" + pub.mb.date.slice(0, 4) + ")" : "") + " · MusicBrainz" : "aucune fiche MusicBrainz"]
-      : ["Œuvre", pub.tmdb ? pub.tmdb.title + (pub.tmdb.year ? " (" + pub.tmdb.year + ")" : "") : "aucune"],
+      : isGame()
+        ? ["Jeu", pub.game ? pub.game.name + (pub.game.year ? " (" + pub.game.year + ")" : "") : "aucun jeu choisi"]
+        : ["Œuvre", pub.tmdb ? pub.tmdb.title + (pub.tmdb.year ? " (" + pub.tmdb.year + ")" : "") : "aucune"],
     ["Taille", fmtSize(pub.job.total)],
     ["Visibilité", f.anonymous === "true" ? "anonyme" : "sous ton pseudo"],
     ["Seed", "ajoutée à " + (multiClients() ? "« " + pub.job.clientName + " »" : "ton client") + " dans « " + pub.job.clientDir + " »"],
@@ -1072,7 +1181,9 @@ function bindPublish() {
   $("#tmdb-go").addEventListener("click", searchTmdb);
   $("#tmdb-q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchTmdb(); });
   $("#f-notmdb").addEventListener("change", () => { if ($("#f-notmdb").checked) { pub.tmdb = null; $("#tmdb-picked").classList.add("hidden"); loadFicheSoon(); } renderBar(); });
-  $("#f-root").addEventListener("change", () => { pub.dirty.category = true; fillLeaves($("#f-root").value, ""); renderBar(); });
+  $("#f-root").addEventListener("change", () => { pub.dirty.category = true; fillLeaves($("#f-root").value, ""); gameSetup(); renderBar(); });
+  $("#game-go").addEventListener("click", searchGame);
+  $("#game-q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchGame(); });
   $("#f-leaf").addEventListener("change", () => { pub.dirty.category = true; loadFicheSoon(); renderBar(); });
   $("#f-vt").addEventListener("input", renderBar);
   $("#f-name").addEventListener("input", () => { pub.dirty.name = true; loadFicheSoon(); renderBar(); });

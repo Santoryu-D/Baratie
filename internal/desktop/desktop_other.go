@@ -22,8 +22,14 @@ func MessageBox(title, text string) { fmt.Fprintln(os.Stderr, title+" : "+text) 
 
 func hideConsole(*exec.Cmd) {}
 
+func noConsole(*exec.Cmd) {}
+
 // CloseWindow ne fait rien hors Windows (la fenêtre suit le navigateur).
 func CloseWindow(string) int { return 0 }
 
 // warmUp ne fait rien hors Windows : la fenêtre s'ouvre directement.
 func warmUp(string, string) {}
+
+// taskbarIdentity ne fait rien hors Windows : la fenêtre garde l'identité du
+// navigateur.
+func taskbarIdentity(string) {}

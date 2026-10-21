@@ -484,10 +484,17 @@ func profileDir() string {
 	return filepath.Join(d, "fenetre")
 }
 
+// openWindow : la fenêtre d'un D3X qui tourne déjà, ouverte par ce lancement
+// (relancé depuis son épingle, par exemple), qui s'arrête aussitôt après. Il
+// attend d'abord que la fenêtre porte l'identité de D3X dans la barre des
+// tâches : arrêté avant, elle garderait celle du navigateur.
 func openWindow(url string) {
-	if desktop.OpenWindow(url, profileDir()) == nil {
+	w := desktop.OpenWindow(url, profileDir())
+	if w == nil {
 		_ = desktop.OpenDefault(url)
+		return
 	}
+	w.WaitIdentity()
 }
 
 // runningInstance lit la session rangée et vérifie qu'un D3X y répond.

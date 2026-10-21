@@ -10,6 +10,7 @@ L'outil de bureau des membres de [V3X](https://v3x.club).
 - **Surveillance** : D3X relance l'analyse tout seul, te prévient des nouvelles releases à cross-seeder et d'un hit and run en vue, et peut ajouter seul les releases identiques.
 - **Publier** : tu choisis un dossier ou un fichier, sur ce PC ou sur ta seedbox, D3X fabrique le .torrent là où sont les fichiers pendant que tu remplis la fiche, que V3X prépare exactement comme sur sa page d'upload. Une fois publiée, la release part en seed dans ton client, sur les mêmes fichiers.
 - **Musique** : D3X lit les tags et la qualité des pistes, retrouve l'album dans MusicBrainz en comparant les durées, et prépare la fiche album du site.
+- **Jeux vidéo** : dans Jeux vidéo ou Émulation, tu cherches le jeu par son titre ; titre, jaquette et fiche jeu du site (genres, studios, config requise) se remplissent, comme sur la page d'upload.
 - **Lot** : un dossier entier passé au crible. D3X ne publie seul que ce qui est sûr ; le reste attend ta revue.
 
 Clients pris en charge : **qBittorrent**, **Transmission**, **Deluge** et **rTorrent** (ruTorrent), sur ce PC, un NAS ou une seedbox, et [plusieurs à la fois](#plusieurs-clients) (une seedbox et ce PC, par exemple).
@@ -71,6 +72,7 @@ Dans Réglages ▸ Surveillance, D3X relance l'analyse à intervalle régulier (
 - **Notification** sur ton bureau pour les nouvelles releases à cross-seeder et pour un hit and run en vue.
 - **Ajout automatique**, si tu le coches : seulement les nouvelles releases identiques (mêmes fichiers, mêmes noms), jamais les « noms différents », avec la règle habituelle (à l'arrêt, vérifiées, démarrées à 100 %). Le premier passage ne fait que noter l'existant : ce qui était déjà là s'ajoute à la main.
 - Fenêtre fermée, D3X reste dans la zone de notification. Sous Windows, il peut aussi se lancer avec la session, sans ouvrir sa fenêtre.
+- Sous Windows, la fenêtre de D3X s'épingle dans la barre des tâches avec l'icône de D3X, et l'épingle relance D3X. Une épingle faite avant la 1.1.21 garde l'icône d'Edge : retire-la et épingle de nouveau.
 
 ## La médiathèque
 

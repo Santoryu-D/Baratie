@@ -43,6 +43,10 @@ func demoRelease(root string) string {
 	_ = os.MkdirAll(soft, 0o755)
 	_ = os.WriteFile(filepath.Join(soft, "setup.exe"), b[:1<<20], 0o644)
 	_ = os.WriteFile(filepath.Join(parent, "Livre.Demo.2022.epub"), b[:2<<20], 0o644)
+	game := filepath.Join(parent, "Jeu.Demo.2024.PC-DEMO")
+	_ = os.MkdirAll(game, 0o755)
+	_ = os.WriteFile(filepath.Join(game, "setup_jeu_demo.exe"), b[:1<<20], 0o644)
+	_ = os.WriteFile(filepath.Join(game, "setup_jeu_demo-1.bin"), b[:4<<20], 0o644)
 	coll := filepath.Join(parent, "Collection.Demo")
 	for _, n := range []string{"Film.Un.2001.1080p-DEMO", "Film.Deux.2002.1080p-DEMO"} {
 		_ = os.MkdirAll(filepath.Join(coll, n), 0o755)
@@ -88,18 +92,25 @@ func (d *demoPub) handle(w http.ResponseWriter, r *http.Request) bool {
 				{"id": 2, "name": "Séries", "slug": "series", "children": []map[string]interface{}{{"id": 21, "name": "Série TV", "slug": "films-videos-serie-tv"}}},
 				{"id": 3, "name": "Ebooks", "slug": "ebook", "children": []map[string]interface{}{{"id": 31, "name": "Livres", "slug": "ebook-livres"}}},
 				{"id": 4, "name": "Audio", "slug": "audio", "children": []map[string]interface{}{{"id": 41, "name": "Musique", "slug": "audio-musique"}, {"id": 42, "name": "Podcast Radio", "slug": "audio-podcast-radio"}}},
+				{"id": 5, "name": "Jeux vidéo", "slug": "jeux-video", "children": []map[string]interface{}{{"id": 51, "name": "PC", "slug": "jeux-video-pc"}}},
 			},
 			"languages": []string{"", "Multi (FR inclus)", "Français", "VFQ", "VOSTFR", "VO", "Muet"},
 			"templates": []map[string]string{{"id": "sobre", "name": "Sobre", "body": ""}, {"id": "complet", "name": "Complet", "body": ""}},
 		})
 	case r.URL.Path == "/api/d3x/tmdb/search", r.URL.Path == "/api/d3x/tmdb/lookup":
 		js(map[string]interface{}{"results": demoMovies})
+	case r.URL.Path == "/api/d3x/igdb/search":
+		js(map[string]interface{}{"configured": true, "results": []map[string]interface{}{
+			{"id": 900101, "name": "Jeu de démonstration", "year": "2024", "coverUrl": nil, "platforms": []string{"PC", "PS5"}},
+			{"id": 900102, "name": "Jeu de démonstration 2", "year": "2026", "coverUrl": nil, "platforms": []string{"PC"}},
+		}})
 	case r.URL.Path == "/api/d3x/fiche":
 		var in struct {
 			ReleaseName string  `json:"releaseName"`
 			MediaInfo   string  `json:"mediainfo"`
 			TmdbRef     *string `json:"tmdbRef"`
 			MbRef       *string `json:"mbRef"`
+			IgdbID      *int64  `json:"igdbId"`
 			Category    *string `json:"categorySlug"`
 			Download    struct {
 				Name      string `json:"name"`
@@ -126,10 +137,22 @@ func (d *demoPub) handle(w http.ResponseWriter, r *http.Request) bool {
 			pres += "\n\n[spoiler=MediaInfo][code]" + in.MediaInfo + "[/code][/spoiler]"
 		}
 		warnings := []string{}
-		if in.MediaInfo == "" {
+		if in.MediaInfo == "" && (in.Category == nil || !strings.HasPrefix(*in.Category, "jeux-video")) && in.IgdbID == nil {
 			warnings = append(warnings, "mediainfo_missing")
 		}
+		// Jeu choisi : la fiche jeu du site (jaquette, genres, config requise).
+		var game interface{}
+		if in.IgdbID != nil {
+			name, y := "Jeu de démonstration", "2024"
+			if *in.IgdbID == 900102 {
+				name, y = "Jeu de démonstration 2", "2026"
+			}
+			title = name + " (" + y + ")"
+			pres = "[center][size=6][b]" + title + "[/b][/size][/center]\n\n" + bbSection("Informations") + bbTable([][2]string{{"Genres", "Aventure, Stratégie"}, {"Développeur", "Studio Démo"}, {"Plateformes", "PC, PS5"}}) + "\n" + bbSection("Configuration requise") + "Système : Windows 10\nMémoire : 8 Go\n\n" + bbSection("Téléchargement") + bbTable([][2]string{{"Release", in.ReleaseName}, {"Taille", demoSize(in.Download.TotalSize)}, {"Fichiers", fmt.Sprint(in.Download.FileCount)}})
+			game = map[string]interface{}{"id": *in.IgdbID, "name": name, "year": y, "title": title, "posterUrl": nil}
+		}
 		js(map[string]interface{}{
+			"game":          game,
 			"analysis":      map[string]interface{}{"title": title, "tokens": []map[string]string{{"kind": "year", "value": year}, {"kind": "resolution", "value": "1080p"}, {"kind": "source", "value": "WEB"}, {"kind": "codec", "value": "H264"}, {"kind": "group", "value": "DEMO"}}, "warnings": []string{}, "score": 90},
 			"language":      "Multi (FR inclus)",
 			"season":        nil,

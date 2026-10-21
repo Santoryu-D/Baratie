@@ -90,11 +90,17 @@ func profileProcs(profileDir string) []proc {
 			continue
 		}
 		cmd = strings.ToLower(cmd)
-		if strings.Contains(cmd, "--user-data-dir") && strings.Contains(cmd, want) {
+		if usesProfile(cmd, want) {
 			out = append(out, proc{pid: e.ProcessID, cmd: cmd})
 		}
 	}
 	return out
+}
+
+// usesProfile : la ligne de commande (en minuscules) lance le navigateur avec
+// ce profil (en minuscules).
+func usesProfile(cmd, profile string) bool {
+	return strings.Contains(cmd, "--user-data-dir") && strings.Contains(cmd, profile)
 }
 
 // warmUp : quand le navigateur de D3X ne tourne pas encore, il est d'abord

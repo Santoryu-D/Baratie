@@ -51,11 +51,18 @@ func appBrowser() string {
 }
 
 // Window est une fenêtre d'application ouverte.
-type Window struct{ cmd *exec.Cmd }
+type Window struct {
+	cmd *exec.Cmd
+	// identity est fermé une fois l'identité de D3X posée sur la fenêtre
+	// pour la barre des tâches (ou abandonnée).
+	identity chan struct{}
+}
 
 // OpenWindow ouvre la page dans une fenêtre d'application, avec un profil à
 // part (profileDir) : elle a sa propre icône dans la barre des tâches, et sa
-// fermeture se voit (Wait). nil si aucun navigateur ne s'y prête.
+// fermeture se voit (Wait). Sous Windows, elle y porte l'identité de D3X et
+// non celle du navigateur : épinglée, elle relance D3X. nil si aucun
+// navigateur ne s'y prête.
 func OpenWindow(url, profileDir string) *Window {
 	b := appBrowser()
 	if b == "" {
@@ -64,12 +71,23 @@ func OpenWindow(url, profileDir string) *Window {
 	_ = os.MkdirAll(profileDir, 0o700)
 	warmUp(b, profileDir)
 	cmd := exec.Command(b, append([]string{"--app=" + url, "--window-size=1280,880"}, profileArgs(profileDir)...)...)
-	hideConsole(cmd)
+	noConsole(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil
 	}
-	return &Window{cmd: cmd}
+	w := &Window{cmd: cmd, identity: make(chan struct{})}
+	go func() {
+		defer close(w.identity)
+		taskbarIdentity(profileDir)
+	}()
+	return w
 }
+
+// WaitIdentity attend que la fenêtre porte l'identité de D3X dans la barre
+// des tâches (15 s au plus si elle n'apparaît pas). Utile à un D3X qui
+// s'arrête juste après avoir ouvert la fenêtre. Hors Windows, rend la main
+// aussitôt.
+func (w *Window) WaitIdentity() { <-w.identity }
 
 // profileArgs : le profil à part de D3X et ses réglages, communs au lancement
 // sans fenêtre et à l'ouverture de la fenêtre.
