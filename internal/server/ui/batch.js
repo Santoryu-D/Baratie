@@ -503,6 +503,7 @@ async function publishWith(e, j, fields, summary) {
     return false;
   }
   lot.published++;
+  lot.publishedBytes += e.size || 0;
   e.job = j.id;
   e.last = { id: j.published.id };
   e.active = j.published.status === "active";
@@ -550,7 +551,7 @@ async function lotRun() {
   if (lot.running) return;
   if (!pub.ctx) await loadCtx();
   if (!pub.ctx) return toast("Publication impossible : " + (pub.ctxError || "V3X injoignable"), "bad");
-  const opts = { sim: $("#b-sim").checked, video: $("#b-video").checked, fixName: $("#b-fixname").checked, waitCheck: $("#b-waitcheck").checked, cap: Number($("#b-cap").value) || 0, max: Number($("#b-max").value) || 0 };
+  const opts = { sim: $("#b-sim").checked, video: $("#b-video").checked, fixName: $("#b-fixname").checked, waitCheck: $("#b-waitcheck").checked, cap: Number($("#b-cap").value) || 0, max: Number($("#b-max").value) || 0, maxGib: Number($("#b-maxgib").value) || 0 };
   // Seulement ce qui est coché ET affiché à l'écran : un dossier apparu entre-temps
   // n'est jamais publié sans avoir été vu.
   const todo = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "ready" || e.state === "review" || e.state === "simulated"));
@@ -558,6 +559,7 @@ async function lotRun() {
   lot.stop = false;
   lot.done = 0;
   lot.published = 0;
+  lot.publishedBytes = 0;
   lot.total = todo.length;
   lot.tab = "pending";
   lotRender();
@@ -565,6 +567,13 @@ async function lotRun() {
     if (lot.stop) break;
     if (opts.max > 0 && lot.published >= opts.max && !opts.sim) {
       e.detail = "plafond de publications atteint";
+      continue;
+    }
+    // Volume publié par lot (quebecman, 21/10/26 : des paquets de 100 Gio au
+    // rythme de son envoi) : une release qui dépasserait le plafond attend le
+    // lot suivant, les plus petites passent encore.
+    if (opts.maxGib > 0 && !opts.sim && lot.publishedBytes + (e.size || 0) > opts.maxGib * 1073741824) {
+      e.detail = "attend le lot suivant : dépasserait les " + opts.maxGib + " Gio publiés de ce lot";
       continue;
     }
     lot.current = e.path;
