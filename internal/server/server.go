@@ -60,10 +60,13 @@ type Server struct {
 	v      *v3x.Client
 	me     *v3x.Me
 	v3xErr string
-	update *Update
-	engine *crossseed.Engine
-	pub    *publish.Manager
-	mux    *http.ServeMux
+	// v3xRetry : la dernière connexion à V3X a échoué sur le réseau ou sur une
+	// panne du site, et non sur un refus de la clé : elle est retentée seule.
+	v3xRetry bool
+	update   *Update
+	engine   *crossseed.Engine
+	pub      *publish.Manager
+	mux      *http.ServeMux
 
 	// Présence de la page : dernière requête de la page, et son « au revoir »
 	// (fermeture de la fenêtre). En nanosecondes Unix.
@@ -163,6 +166,7 @@ func NewWith(version string, cfg *config.Config, token string, port int, opts Op
 		w.WriteHeader(http.StatusNoContent)
 	})
 	go s.connect()
+	go s.v3xRetryLoop()
 	go s.connectSSH()
 	go s.updateLoop()
 	go s.surveyLoop()
@@ -266,30 +270,65 @@ func (s *Server) connect() {
 	defer cancel()
 
 	var (
-		v      *v3x.Client
-		me     *v3x.Me
-		v3xErr string
-		done   = make(chan struct{})
+		v        *v3x.Client
+		me       *v3x.Me
+		v3xErr   string
+		v3xRetry bool
+		done     = make(chan struct{})
 	)
 	go func() {
 		defer close(done)
-		if cfg.V3XKey == "" {
-			return
-		}
-		v = v3x.New(cfg.V3XBase, cfg.V3XKey, "D3X/"+s.Version)
-		m, err := v.Me(ctx)
-		if err != nil {
-			v3xErr = err.Error()
-		} else {
-			me = m
-		}
+		v, me, v3xErr, v3xRetry = dialV3X(ctx, cfg, s.Version)
 	}()
 	conns := dialAll(ctx, cfg.Clients)
 	<-done
 	s.mu.Lock()
-	s.v, s.me, s.v3xErr = v, me, v3xErr
+	s.v, s.me, s.v3xErr, s.v3xRetry = v, me, v3xErr, v3xRetry
 	s.conns = conns
 	s.mu.Unlock()
+}
+
+// dialV3X vérifie la clé auprès de V3X. retry : l'échec vient du réseau ou
+// d'une panne du site (à retenter), pas d'un refus de la clé.
+func dialV3X(ctx context.Context, cfg config.Config, version string) (v *v3x.Client, me *v3x.Me, msg string, retry bool) {
+	if cfg.V3XKey == "" {
+		return nil, nil, "", false
+	}
+	v = v3x.New(cfg.V3XBase, cfg.V3XKey, "D3X/"+version)
+	m, err := v.Me(ctx)
+	if err != nil {
+		var ae *v3x.APIError
+		return v, nil, err.Error(), !errors.As(err, &ae) || ae.Status >= 500
+	}
+	return v, m, "", false
+}
+
+// v3xRetryEvery : délai entre deux nouvelles tentatives de connexion à V3X.
+var v3xRetryEvery = 30 * time.Second
+
+// v3xRetryLoop : une connexion à V3X ratée sur le réseau (pas encore prêt au
+// démarrage de la machine ou après une mise à jour, site un instant
+// injoignable) est retentée seule. Avant, l'erreur restait affichée jusqu'au
+// prochain enregistrement des Réglages (MasterMan, 22/10/26).
+func (s *Server) v3xRetryLoop() {
+	for {
+		time.Sleep(v3xRetryEvery)
+		s.mu.Lock()
+		cfg, retry := *s.cfg, s.v3xRetry && s.me == nil
+		s.mu.Unlock()
+		if !retry {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		v, me, msg, again := dialV3X(ctx, cfg, s.Version)
+		cancel()
+		s.mu.Lock()
+		// Réglages changés entre-temps : leur propre connexion fait foi.
+		if s.cfg.V3XKey == cfg.V3XKey && s.cfg.V3XBase == cfg.V3XBase && s.me == nil {
+			s.v, s.me, s.v3xErr, s.v3xRetry = v, me, msg, again
+		}
+		s.mu.Unlock()
+	}
 }
 
 type stateOut struct {
