@@ -32,7 +32,12 @@ L'analyse range tes releases en onglets :
 
 - **À ajouter** : identiques sur V3X. Les **relais** passent en tête (releases rares lâchées par un membre : une prime en jetons aux premiers qui la reprennent, après 24 h de seed), puis les **releases mortes** (plus aucun seeder depuis trois jours : ton seed les ramène, et la prime de résurrection tombe une fois qu'elles ont servi).
 - **Noms différents** : les mêmes fichiers sous d'autres noms (voir les [questions](#questions)).
-- **Pas sur V3X** : ce que tu seedes ailleurs et qui manque à V3X. « Publier » ouvre la fiche d'une release, ou coches-en plusieurs pour les passer au crible du lot. Celles qui répondent à une **demande ouverte** sur le site sont en tête, avec la prime ; une fois ta release publiée et validée, D3X la propose au demandeur d'un clic.
+- **Pas sur V3X** : ce que tu seedes ailleurs et qui manque à V3X. « Publier » ouvre la fiche d'une release, ou coches-en plusieurs pour les passer au crible du lot. Celles qui répondent à une **demande ouverte** sur le site sont en tête, avec la prime ; une fois ta release publiée et validée, D3X la propose au demandeur d'un clic. Une release seedée plusieurs fois (un torrent par tracker, sur des liens physiques) n'y apparaît qu'une fois, avec son nombre de copies (×2, ×3…). Celles d'une team qui interdit le réupload, ou le soumet à son accord, portent une pastille qui le dit, et une case les masque.
+- **Autres** :
+  - **Même vidéo sur V3X** : le plus gros fichier de ta copie (200 Mio ou plus) existe à l'octet près dans une fiche V3X, sous une autre forme (nom refait, .nfo en plus, dossier au lieu d'un fichier seul). Rien ne manque au site, rien à publier.
+  - **Absente du disque** : le client croit la copie complète, mais ses fichiers ne sont plus là (supprimés, ou déplacés par un outil de médiathèque). D3X ne l'ajoute pas.
+
+Une release que tu ne veux pas seeder pour l'instant : **Ignorer** la retire de la liste et de « Tout cocher », et elle ne revient plus à chaque analyse. Ça marche dans « À ajouter », « Noms différents » et « Pas sur V3X » ; « Les réafficher » la retrouve. La liste des releases ignorées reste sur l'appareil.
 
 D3X retrouve les fichiers d'une release sur ce PC, sur ta seedbox, ou sur un NAS si tu lui indiques où il voit les dossiers du client (Réglages ▸ Clients torrent ▸ Dossiers du client).
 
@@ -91,6 +96,8 @@ Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et
 - **Hachage sur tous les cœurs**, mémoire bornée, et un cache : une release déjà hachée ne l'est plus jamais.
 - **MediaInfo sans rien installer** : la même bibliothèque que la page d'upload du site, calculée dans la page de D3X.
 - **La fiche est celle du site** : nom suggéré, catégorie, TMDB, NFO et présentation viennent du même générateur que la page d'upload de V3X. Éditeur avec barre d'outils et aperçu en direct.
+- **Présentation en HTML** pour les membres que V3X y autorise (même règle que le site) : choix BBCode ou HTML au-dessus de l'éditeur, retenu sur l'appareil, et aperçu tel que le site l'affichera.
+- **Rapport VirusTotal** demandé pour les catégories où V3X l'exige (applications, jeux), compté dans « Il manque » tant qu'il n'est pas rempli.
 - **Seed automatique**, même quand ton client tourne sur un NAS ou dans Docker : D3X devine où le client voit tes fichiers, d'après les torrents qu'il seede déjà.
 - Fichiers cachés et aperçus de médiathèque écartés (`.DS_Store`, `*.trickplay`, `extrafanart`…), liens symboliques suivis sans boucle, fichier encore en cours d'écriture détecté.
 
@@ -144,7 +151,7 @@ Le logo, la barre latérale et les polices du site, pour ne pas être perdu. D3X
    - Linux : `d3x_linux_amd64` ou `d3x_linux_arm64`
 2. Lance-le. D3X s'ouvre dans sa propre fenêtre ; sous Windows, son icône apparaît aussi près de l'horloge (clic pour rouvrir la fenêtre, clic droit ▸ Quitter). Tout reste sur ta machine (`http://127.0.0.1`). Fermer la fenêtre arrête D3X, sauf s'il a un travail en cours (il le termine d'abord) ou si la surveillance est active (il reste dans la zone de notification).
 
-Les mises à jour s'installent d'un clic depuis D3X, et seulement après deux vérifications : la liste des empreintes doit être signée par la clé de V3X, et le fichier doit avoir l'empreinte annoncée.
+Les mises à jour s'installent d'un clic depuis D3X, et seulement après deux vérifications : la liste des empreintes doit être signée par la clé de V3X, et le fichier doit avoir l'empreinte annoncée. D3X cherche une nouvelle version toutes les heures ; le bouton **Vérifier**, sous le numéro de version en bas à gauche, cherche tout de suite.
 
 Premier lancement :
 
@@ -195,6 +202,7 @@ Chaque version publie `checksums.txt` (l'empreinte SHA-256 de chaque fichier) et
 2. **Ton client torrent**, par son interface web, ou plusieurs (« Ajouter un autre client »). Le bouton *Détecter sur ce PC* trouve ceux qui tournent ici. « Tester la connexion » essaie un client sans rien enregistrer.
 3. **Ta seedbox** (facultatif), par SSH, pour publier ce qui s'y trouve.
 4. **Les dossiers du client** (facultatif), pour chaque client : s'il tourne ailleurs (NAS, Docker), une ligne par dossier, son chemin ici et le même vu par le client.
+5. **Catégorie et étiquette** (facultatif), posées sur chaque torrent ajouté par D3X pour les retrouver dans ton client, et une **catégorie de tes publications** pour ranger à part ce que tu publies avec Publier et le Lot (vide : la même).
 
 | Client | Adresse habituelle | À activer |
 | --- | --- | --- |
