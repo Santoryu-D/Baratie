@@ -919,7 +919,7 @@ function setOf(r) {
 
 function checkable(r) {
   // Une release ignorée cachée ne se coche pas avec « Tout cocher ».
-  if (!ui.showIgnored && r.status === "none" && ignoredSet().has(r.key)) return false;
+  if (!ui.showIgnored && ignorable(r) && ignoredSet().has(r.key)) return false;
   return canAdd(r) || canPick(r);
 }
 
@@ -956,9 +956,15 @@ function hideForbidden() {
   try { return localStorage.getItem("d3x-hide-forbidden") === "1"; } catch (e) { return false; }
 }
 
-// Releases de « Pas sur V3X » écartées par le membre (source interdite sur
-// V3X, release qu'il ne publiera pas) : elles ne reviennent plus à chaque
-// analyse (suggestion de Luci, 21/10/26). Gardé sur l'appareil.
+// Releases écartées par le membre : dans « Pas sur V3X », une source interdite
+// sur V3X ou une release qu'il ne publiera pas (suggestion de Luci) ; dans « À
+// ajouter » et « Noms différents », une release qu'il ne veut pas seeder pour
+// l'instant (MasterMan, 21/10/26). Elles ne reviennent plus à chaque analyse.
+// Gardé sur l'appareil.
+const IGNORABLE = ["none", "add", "renamed"];
+function ignorable(r) {
+  return IGNORABLE.includes(r.status);
+}
 let ignCache = null;
 function ignoredSet() {
   if (!ignCache) {
@@ -973,6 +979,7 @@ function toggleIgnored(r) {
   else {
     s.add(r.key);
     ui.picked.delete(r.key);
+    ui.selected.delete(r.key);
   }
   try { localStorage.setItem("d3x-ignored", JSON.stringify([...s])); } catch (e) { /* rien */ }
   renderRows();
@@ -1114,11 +1121,12 @@ async function lotPicked() {
 function renderRows() {
   const counts = {};
   const ign = ignoredSet();
-  const isIgnored = (r) => r.status === "none" && ign.has(r.key);
-  let nIgnored = 0;
+  const isIgnored = (r) => ignorable(r) && ign.has(r.key);
+  const nIgnoredIn = {}; // par onglet
   for (const r of ui.rows) {
     if (isIgnored(r)) {
-      nIgnored++;
+      const t = tabOfRow(r).id;
+      nIgnoredIn[t] = (nIgnoredIn[t] || 0) + 1;
       if (!ui.showIgnored) continue;
     }
     const t = tabOfRow(r).id;
@@ -1132,7 +1140,7 @@ function renderRows() {
   for (const t of TABS) {
     // « Pas sur V3X » reste là tant que des releases y sont ignorées, sinon
     // « Les réafficher » devenait introuvable (Luci, 21/10/26).
-    if (t.id !== "todo" && !counts[t.id] && !(t.id === "none" && nIgnored)) continue;
+    if (t.id !== "todo" && !counts[t.id] && !nIgnoredIn[t.id]) continue;
     const b = el("button", "tab");
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", String(t.id === ui.tab));
@@ -1147,8 +1155,9 @@ function renderRows() {
   const tab = TABS.find((t) => t.id === ui.tab) || TABS[0];
   let list = ui.rows.filter((r) => tabOfRow(r).id === tab.id && (ui.showIgnored || !isIgnored(r)));
   const ignLine = $("#ign-line");
-  ignLine.classList.toggle("hidden", tab.id !== "none" || !nIgnored);
-  if (tab.id === "none" && nIgnored) {
+  const nIgnored = nIgnoredIn[tab.id] || 0;
+  ignLine.classList.toggle("hidden", !nIgnored);
+  if (nIgnored) {
     $("#ign-text").textContent = nIgnored + " " + plural(nIgnored, "release ignorée", "releases ignorées") + (ui.showIgnored ? ", affichée" + (nIgnored > 1 ? "s" : "") + " avec les autres." : ".");
     $("#ign-toggle").textContent = ui.showIgnored ? "Les masquer" : "Les réafficher";
   }
@@ -1309,13 +1318,15 @@ function rowEl(r) {
     b.addEventListener("click", () => publishRow(r, b));
     box.append(b);
   }
-  if (r.status === "none") {
+  if (ignorable(r)) {
     const ignored = ignoredSet().has(r.key);
     const b = el("button", "btn small", ignored ? "Ne plus ignorer" : "Ignorer");
     b.type = "button";
     b.title = ignored
-      ? "La release revient dans « Pas sur V3X »."
-      : "Écarte cette release de « Pas sur V3X » (source interdite sur V3X, release que tu ne publieras pas) : elle ne revient plus à chaque analyse.";
+      ? "La release revient dans la liste."
+      : r.status === "none"
+        ? "Écarte cette release de « Pas sur V3X » (source interdite sur V3X, release que tu ne publieras pas) : elle ne revient plus à chaque analyse."
+        : "Écarte cette release de la liste (tu ne veux pas la seeder pour l'instant) : elle ne revient plus à chaque analyse, et « Tout cocher » la laisse de côté.";
     b.addEventListener("click", () => toggleIgnored(r));
     box.append(b);
   }
