@@ -24,3 +24,6 @@ func hideConsole(*exec.Cmd) {}
 
 // CloseWindow ne fait rien hors Windows (la fenêtre suit le navigateur).
 func CloseWindow(string) int { return 0 }
+
+// warmUp ne fait rien hors Windows : la fenêtre s'ouvre directement.
+func warmUp(string, string) {}

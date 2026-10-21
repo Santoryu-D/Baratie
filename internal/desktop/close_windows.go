@@ -3,6 +3,7 @@
 package desktop
 
 import (
+	"os/exec"
 	"strings"
 	"time"
 	"unsafe"
@@ -23,37 +24,14 @@ const processCommandLineInformation = 60
 // fenêtre rouverte aussitôt sur le même profil se raccrochait sinon au
 // navigateur mourant et restait vide (Luci, 21/10/26).
 func CloseWindow(profileDir string) int {
-	want := strings.ToLower(profileDir)
-	if want == "" {
-		return 0
-	}
-	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
-	if err != nil {
-		return 0
-	}
-	defer windows.CloseHandle(snap)
-	var e windows.ProcessEntry32
-	e.Size = uint32(unsafe.Sizeof(e))
 	var stopped []windows.Handle
 	defer func() {
 		for _, h := range stopped {
 			_ = windows.CloseHandle(h)
 		}
 	}()
-	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
-		name := strings.ToLower(windows.UTF16ToString(e.ExeFile[:]))
-		if name != "msedge.exe" && name != "chrome.exe" {
-			continue
-		}
-		cmd, ok := commandLine(e.ProcessID)
-		if !ok {
-			continue
-		}
-		cmd = strings.ToLower(cmd)
-		if !strings.Contains(cmd, "--user-data-dir") || !strings.Contains(cmd, want) {
-			continue
-		}
-		h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, e.ProcessID)
+	for _, pid := range profilePIDs(profileDir) {
+		h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, pid)
 		if err != nil {
 			continue
 		}
@@ -72,6 +50,60 @@ func CloseWindow(profileDir string) int {
 		_, _ = windows.WaitForSingleObject(h, uint32(left/time.Millisecond))
 	}
 	return len(stopped)
+}
+
+// profilePIDs : les processus du navigateur lancés avec le profil de D3X.
+func profilePIDs(profileDir string) []uint32 {
+	want := strings.ToLower(profileDir)
+	if want == "" {
+		return nil
+	}
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil
+	}
+	defer windows.CloseHandle(snap)
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	var out []uint32
+	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+		name := strings.ToLower(windows.UTF16ToString(e.ExeFile[:]))
+		if name != "msedge.exe" && name != "chrome.exe" {
+			continue
+		}
+		cmd, ok := commandLine(e.ProcessID)
+		if !ok {
+			continue
+		}
+		cmd = strings.ToLower(cmd)
+		if strings.Contains(cmd, "--user-data-dir") && strings.Contains(cmd, want) {
+			out = append(out, e.ProcessID)
+		}
+	}
+	return out
+}
+
+// warmUp : quand le navigateur de D3X ne tourne pas encore, il est d'abord
+// lancé sans fenêtre, et la fenêtre n'est ouverte qu'une fois qu'il est prêt.
+// Chez Luci (21/10/26), la fenêtre créée au démarrage même du navigateur
+// restait vide alors que sa page était chargée, et celle ouverte ensuite
+// dans le navigateur déjà lancé s'affichait : c'est ce second chemin qui sert
+// désormais à chaque fois.
+func warmUp(browser, profileDir string) {
+	if len(profilePIDs(profileDir)) > 0 {
+		return
+	}
+	cmd := exec.Command(browser, append([]string{"--no-startup-window"}, profileArgs(profileDir)...)...)
+	hideConsole(cmd)
+	if cmd.Start() != nil {
+		return
+	}
+	go func() { _ = cmd.Wait() }()
+	for i := 0; i < 50 && len(profilePIDs(profileDir)) == 0; i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	// Le temps que le navigateur finisse de démarrer (processus graphique compris).
+	time.Sleep(1500 * time.Millisecond)
 }
 
 // commandLine lit la ligne de commande d'un processus.

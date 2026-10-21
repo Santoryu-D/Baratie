@@ -62,19 +62,24 @@ func OpenWindow(url, profileDir string) *Window {
 		return nil
 	}
 	_ = os.MkdirAll(profileDir, 0o700)
-	cmd := exec.Command(b,
-		"--app="+url,
-		"--user-data-dir="+profileDir,
-		"--window-size=1280,880",
-		"--no-first-run",
-		"--no-default-browser-check",
-		"--disable-features=Translate",
-	)
+	warmUp(b, profileDir)
+	cmd := exec.Command(b, append([]string{"--app=" + url, "--window-size=1280,880"}, profileArgs(profileDir)...)...)
 	hideConsole(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil
 	}
 	return &Window{cmd: cmd}
+}
+
+// profileArgs : le profil à part de D3X et ses réglages, communs au lancement
+// sans fenêtre et à l'ouverture de la fenêtre.
+func profileArgs(profileDir string) []string {
+	return []string{
+		"--user-data-dir=" + profileDir,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-features=Translate",
+	}
 }
 
 // Wait attend la fermeture de la fenêtre.
