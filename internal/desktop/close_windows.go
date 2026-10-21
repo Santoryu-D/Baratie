@@ -54,6 +54,20 @@ func CloseWindow(profileDir string) int {
 
 // profilePIDs : les processus du navigateur lancés avec le profil de D3X.
 func profilePIDs(profileDir string) []uint32 {
+	var out []uint32
+	for _, p := range profileProcs(profileDir) {
+		out = append(out, p.pid)
+	}
+	return out
+}
+
+type proc struct {
+	pid uint32
+	cmd string // ligne de commande, en minuscules
+}
+
+// profileProcs : ces processus avec leur ligne de commande.
+func profileProcs(profileDir string) []proc {
 	want := strings.ToLower(profileDir)
 	if want == "" {
 		return nil
@@ -65,7 +79,7 @@ func profilePIDs(profileDir string) []uint32 {
 	defer windows.CloseHandle(snap)
 	var e windows.ProcessEntry32
 	e.Size = uint32(unsafe.Sizeof(e))
-	var out []uint32
+	var out []proc
 	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
 		name := strings.ToLower(windows.UTF16ToString(e.ExeFile[:]))
 		if name != "msedge.exe" && name != "chrome.exe" {
@@ -77,7 +91,7 @@ func profilePIDs(profileDir string) []uint32 {
 		}
 		cmd = strings.ToLower(cmd)
 		if strings.Contains(cmd, "--user-data-dir") && strings.Contains(cmd, want) {
-			out = append(out, e.ProcessID)
+			out = append(out, proc{pid: e.ProcessID, cmd: cmd})
 		}
 	}
 	return out
@@ -99,11 +113,22 @@ func warmUp(browser, profileDir string) {
 		return
 	}
 	go func() { _ = cmd.Wait() }()
-	for i := 0; i < 50 && len(profilePIDs(profileDir)) == 0; i++ {
+	// Prêt = son processus graphique tourne (8 s au plus : une machine lente
+	// le lance tard, et c'est sans lui que la fenêtre restait vide), puis
+	// une seconde de marge.
+	for i := 0; i < 80 && !hasGPUProcess(profileDir); i++ {
 		time.Sleep(100 * time.Millisecond)
 	}
-	// Le temps que le navigateur finisse de démarrer (processus graphique compris).
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(time.Second)
+}
+
+func hasGPUProcess(profileDir string) bool {
+	for _, p := range profileProcs(profileDir) {
+		if strings.Contains(p.cmd, "--type=gpu-process") {
+			return true
+		}
+	}
+	return false
 }
 
 // commandLine lit la ligne de commande d'un processus.

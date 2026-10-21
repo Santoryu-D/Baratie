@@ -1130,7 +1130,9 @@ function renderRows() {
   const tabs = $("#tabs");
   tabs.replaceChildren();
   for (const t of TABS) {
-    if (t.id !== "todo" && !counts[t.id]) continue;
+    // « Pas sur V3X » reste là tant que des releases y sont ignorées, sinon
+    // « Les réafficher » devenait introuvable (Luci, 21/10/26).
+    if (t.id !== "todo" && !counts[t.id] && !(t.id === "none" && nIgnored)) continue;
     const b = el("button", "tab");
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", String(t.id === ui.tab));
@@ -1480,8 +1482,31 @@ async function poll() {
 
 // Présence : un signal toutes les 20 s, et un au revoir à la fermeture. Sous
 // Windows, D3X s'arrête quand sa fenêtre est fermée (sauf travail en cours).
+// Le signal dit aussi si la page est vraiment à l'écran (onglet visible ET une
+// image dessinée) : une fenêtre qui charge sa page sans jamais l'afficher
+// (Luci, 21/10/26) est remplacée par D3X, et se ferme quand il le lui dit.
+const PAGE_ID = Math.random().toString(36).slice(2, 12);
+
+function drawn() {
+  return new Promise((res) => {
+    let done = false;
+    requestAnimationFrame(() => { done = true; res(true); });
+    setTimeout(() => { if (!done) res(false); }, 1000);
+  });
+}
+
+async function ping() {
+  try {
+    const shown = document.visibilityState === "visible" && (await drawn());
+    const r = await fetch("/ui/ping?id=" + PAGE_ID + "&shown=" + (shown ? 1 : 0));
+    if (r.status === 200 && (await r.json()).close) window.close();
+  } catch (e) { /* rien */ }
+}
+
 function presence() {
-  setInterval(() => { fetch("/ui/ping").catch(() => {}); }, 20000);
+  setTimeout(ping, 1500);
+  setInterval(ping, 20000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ping(); });
   window.addEventListener("pagehide", () => {
     try { navigator.sendBeacon("/ui/bye", new Blob(["{}"], { type: "application/json" })); } catch (e) { /* rien */ }
   });

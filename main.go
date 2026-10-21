@@ -46,6 +46,10 @@ const defaultPort = 8733
 // sa fenêtre pour vide (un navigateur lancé à froid met quelques secondes).
 const windowCheck = 15 * time.Second
 
+// hiddenCheck : une page chargée qui ne s'est toujours pas affichée au bout de
+// ce délai est dans une fenêtre ratée.
+const hiddenCheck = 6 * time.Second
+
 // Variable passée à D3X relancé après une mise à jour : « port:jeton ». Il
 // reprend la même adresse et la même session, la page ouverte se reconnecte.
 const takeoverEnv = "D3X_TAKEOVER"
@@ -284,10 +288,23 @@ func run(port int, window bool) error {
 			if !showWindow() || !desktop.HasTray {
 				return
 			}
-			// Fenêtre restée vide : la page n'a jamais appelé D3X. On la ferme et
-			// on en rouvre une, une seule fois (Luci, 21/10/26 : il fallait lancer
-			// D3X deux fois).
-			time.Sleep(windowCheck)
+			// Fenêtre ratée (Luci, 21/10/26 : il fallait lancer D3X deux fois),
+			// une seule reprise :
+			//   • page chargée mais jamais à l'écran : une seconde fenêtre dans le
+			//     navigateur lancé, comme le second lancement qui marchait chez
+			//     elle ; la première se ferme d'elle-même (ping « close ») ;
+			//   • page jamais venue : la fenêtre est fermée et rouverte.
+			for waited := time.Duration(0); waited < windowCheck; waited += 500 * time.Millisecond {
+				time.Sleep(500 * time.Millisecond)
+				if srv.PageShown() {
+					return
+				}
+				if waited >= hiddenCheck && srv.PageHidden() {
+					log.Println("fenêtre ouverte mais pas affichée, nouvelle fenêtre")
+					showWindow()
+					return
+				}
+			}
 			if srv.PageSeen() {
 				return
 			}

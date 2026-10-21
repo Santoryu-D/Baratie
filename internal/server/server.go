@@ -71,6 +71,8 @@ type Server struct {
 	updateStaging   atomic.Bool  // téléchargement et vérification d'une version en cours
 	lastSeen        atomic.Int64
 	byeAt           atomic.Int64
+	pagesMu         sync.Mutex
+	pages           map[string]bool // page → affichée à l'écran (ping ?id=&shown=)
 
 	ssh     *remote.Client // seedbox connectée (nil sinon)
 	sshSys  string
@@ -154,7 +156,7 @@ func NewWith(version string, cfg *config.Config, token string, port int, opts Op
 	s.routesLibrary()
 	s.mux.HandleFunc("POST /ui/update/restart", s.restartNow)
 	s.mux.HandleFunc("POST /ui/update/check", s.checkNow)
-	s.mux.HandleFunc("GET /ui/ping", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	s.mux.HandleFunc("GET /ui/ping", s.ping)
 	s.mux.HandleFunc("POST /ui/bye", func(w http.ResponseWriter, r *http.Request) {
 		s.byeAt.Store(time.Now().UnixNano())
 		w.WriteHeader(http.StatusNoContent)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -47,6 +48,76 @@ func (s *Server) PageGone() bool {
 
 // PageSeen dit si la page a déjà appelé D3X depuis son lancement.
 func (s *Server) PageSeen() bool { return s.lastSeen.Load() != 0 }
+
+// ping : signal de présence de la page, qui dit aussi si elle est vraiment à
+// l'écran (onglet visible et image dessinée). Chez Luci (21/10/26), la
+// première fenêtre chargeait sa page sans jamais s'afficher (absente de la
+// barre des tâches) : une fois une autre fenêtre affichée, celle-là reçoit
+// « close » et se ferme d'elle-même.
+func (s *Server) ping(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" || len(id) > 32 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	shown := r.URL.Query().Get("shown") == "1"
+	s.pagesMu.Lock()
+	if s.pages == nil {
+		s.pages = map[string]bool{}
+	}
+	before, known := s.pages[id]
+	if len(s.pages) < 64 || known {
+		s.pages[id] = before || shown
+	}
+	other := false
+	for k, v := range s.pages {
+		if k != id && v {
+			other = true
+		}
+	}
+	s.pagesMu.Unlock()
+	if !known {
+		if shown {
+			log.Println("page de D3X affichée")
+		} else {
+			log.Println("page de D3X chargée mais pas affichée")
+		}
+	} else if shown && !before {
+		log.Println("page de D3X affichée")
+	}
+	if !shown && !before && other {
+		writeJSON(w, http.StatusOK, map[string]bool{"close": true})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// PageShown : une page au moins est à l'écran.
+func (s *Server) PageShown() bool {
+	s.pagesMu.Lock()
+	defer s.pagesMu.Unlock()
+	for _, v := range s.pages {
+		if v {
+			return true
+		}
+	}
+	return false
+}
+
+// PageHidden : des pages ont parlé, aucune n'est à l'écran.
+func (s *Server) PageHidden() bool {
+	s.pagesMu.Lock()
+	defer s.pagesMu.Unlock()
+	if len(s.pages) == 0 {
+		return false
+	}
+	for _, v := range s.pages {
+		if v {
+			return false
+		}
+	}
+	return true
+}
 
 // PageClosed : la page a dit au revoir (fenêtre fermée) et rien n'est revenu
 // depuis 8 s. Contrairement au simple silence (veille de l'ordinateur), c'est
