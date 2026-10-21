@@ -501,6 +501,23 @@ func (e *Engine) runScan(ctx context.Context) error {
 		}
 		firstOf[r.Match.ID] = r
 	}
+	// Pas sur V3X : de même, une release seedée plusieurs fois (un torrent par
+	// tracker, sur des liens physiques) n'apparaît qu'une fois, avec son nombre
+	// de copies, au lieu d'une ligne par torrent (exodius19, 21/10/26). Mêmes
+	// noms et mêmes tailles de fichiers = même release.
+	sameRelease := map[string]*Row{}
+	for _, k := range order {
+		r := rowOf[k]
+		if r == nil || r.sig == nil || r.sig.ContentHash == "" || (r.Status != StNone && r.Status != StSameVideo) {
+			continue
+		}
+		if f := sameRelease[r.sig.ContentHash]; f != nil {
+			f.Copies += r.Copies
+			delete(rows, r.Key)
+			continue
+		}
+		sameRelease[r.sig.ContentHash] = r
+	}
 
 	e.mu.Lock()
 	e.rows = rows

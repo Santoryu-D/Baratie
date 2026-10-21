@@ -91,3 +91,54 @@ func TestSameVideo(t *testing.T) {
 		})
 	}
 }
+
+// Une release seedée sur plusieurs trackers (un torrent chacun, sur des liens
+// physiques ailleurs) : une seule ligne « Pas sur V3X », copies comptées
+// (exodius19, 21/10/26 : quatre fois le même Astérix).
+func TestNoneCopiesMerged(t *testing.T) {
+	isolatedConfig(t)
+	files := map[string]int64{"Film.1968.FRENCH.1080p-GRP.mkv": 1_200_000_000}
+	fq := &fakeQbit{list: map[string]*fakeTorrent{}, complete: map[string]float64{}}
+	var name string
+	for _, src := range []string{"UN", "DEUX", "TROIS"} {
+		raw := mkTorrent("Film.1968.FRENCH.1080p-GRP", files, "https://autre.invalid/announce", src)
+		p, _ := torrent.Parse(raw)
+		h := strings.ToLower(p.InfoHash)
+		name = p.Name
+		dir := "/data/" + src
+		fq.list[h] = &fakeTorrent{Torrent: qbit.Torrent{
+			Hash: h, Name: p.Name, SavePath: dir, ContentPath: dir + "/" + p.Name, Progress: 1, State: "stalledUP",
+			Size: p.Total, TotalSize: p.Total, MagnetURI: "magnet:?xt=urn:btih:" + h + "&tr=https%3A%2F%2Fautre.invalid%2Fannounce",
+		}, raw: raw}
+	}
+	qs := httptest.NewServer(fq.handler(t))
+	defer qs.Close()
+	vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/me":
+			io.WriteString(w, `{"username":"test","ratio":2.5,"hitAndRun":0}`)
+		case "/api/d3x/match":
+			io.WriteString(w, `{"results":[]}`)
+		case "/api/d3x/match-files":
+			io.WriteString(w, `{"matches":{}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vs.Close()
+	q, _ := client.New(client.Options{URL: qs.URL, User: "admin", Pass: "secret"})
+	e := New(oneClient(q, v3x.New(vs.URL, "cle", "D3X/test"), config.Defaults()))
+	if err := e.StartScan(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return !e.Scanning() })
+	var got []Row
+	for _, r := range e.Rows() {
+		if r.Name == name {
+			got = append(got, r)
+		}
+	}
+	if len(got) != 1 || got[0].Status != StNone || got[0].Copies != 3 {
+		t.Fatalf("attendu une ligne « Pas sur V3X » à 3 copies : %+v", got)
+	}
+}
