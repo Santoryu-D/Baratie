@@ -345,6 +345,8 @@ func run(port int, window bool) error {
 // dossier de D3X, ou donné par D3X_TOKEN). Ni fenêtre, ni mise à jour par
 // lui-même quand D3X_MANAGED est posé (image Docker : on met l'image à jour).
 func serve(addr string) error {
+	// Restes d'une mise à jour (binaire « .old »), comme au lancement en fenêtre.
+	update.Cleanup()
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("configuration illisible : %w", err)
@@ -459,7 +461,9 @@ func health() int {
 
 // relaunch démarre le binaire (éventuellement nouveau) avec les mêmes options.
 func relaunch(takeover string) error {
-	exe, err := os.Executable()
+	// Le chemin du lancement, pas os.Executable : sous Linux, celui-ci suit le
+	// binaire renommé en « .old » et relancerait l'ancienne version.
+	exe, err := update.ExePath()
 	if err != nil {
 		return err
 	}

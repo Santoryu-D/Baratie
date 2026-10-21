@@ -503,6 +503,7 @@ async function publishWith(e, j, fields, summary) {
     return false;
   }
   lot.published++;
+  e.job = j.id;
   e.last = { id: j.published.id };
   e.active = j.published.status === "active";
   // Une demande ouverte attend peut-être cette release.
@@ -517,11 +518,39 @@ async function publishWith(e, j, fields, summary) {
   return true;
 }
 
+// Option « Attendre la vérification » : le lot ne passe à la release suivante
+// qu'une fois celle-ci ajoutée au client et vérifiée, pour ne pas empiler les
+// vérifications sur un disque lent (karat, 21/10/26). « Arrêter » coupe l'attente.
+async function waitChecked(e) {
+  for (;;) {
+    let j;
+    try { j = await api("/ui/pub/" + e.job); } catch (err) { if (err.message === "session") throw err; return; }
+    const s = j.seed;
+    // Fini : erreur d'ajout, torrent déjà dans le client (pas de suivi), ou
+    // vérification terminée (un « démarrage refusé » garde l'état checking avec un détail).
+    const checking = j.state === "seeding" || (s && s.status === "checking" && !s.detail);
+    if (!checking || j.seedError) {
+      if (j.seedError) e.detail += " · seed : " + j.seedError;
+      else if (s && s.status === "seeding") e.detail += " · vérifiée à 100 %, en seed";
+      else if (s && s.detail) e.detail += " · " + s.detail;
+      lotRender();
+      return;
+    }
+    if (lot.stop) return;
+    lotProgress("Lot : " + (lot.done + 1) + " / " + lot.total, "ton client vérifie " + e.name + (s && s.progress ? " (" + Math.round(s.progress * 100) + " %)" : "") + "…");
+    await wait(2000);
+  }
+}
+
+function waitCheckSaved() {
+  try { return localStorage.getItem("d3x-lot-waitcheck") === "1"; } catch (err) { return false; }
+}
+
 async function lotRun() {
   if (lot.running) return;
   if (!pub.ctx) await loadCtx();
   if (!pub.ctx) return toast("Publication impossible : " + (pub.ctxError || "V3X injoignable"), "bad");
-  const opts = { sim: $("#b-sim").checked, video: $("#b-video").checked, fixName: $("#b-fixname").checked, cap: Number($("#b-cap").value) || 0, max: Number($("#b-max").value) || 0 };
+  const opts = { sim: $("#b-sim").checked, video: $("#b-video").checked, fixName: $("#b-fixname").checked, waitCheck: $("#b-waitcheck").checked, cap: Number($("#b-cap").value) || 0, max: Number($("#b-max").value) || 0 };
   // Seulement ce qui est coché ET affiché à l'écran : un dossier apparu entre-temps
   // n'est jamais publié sans avoir été vu.
   const todo = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "ready" || e.state === "review" || e.state === "simulated"));
@@ -546,6 +575,13 @@ async function lotRun() {
     } catch (err) {
       if (err.message === "session") break;
       await decide(e, "error", err.message);
+    }
+    if (opts.waitCheck && !opts.sim && e.state === "published" && e.job) {
+      try {
+        await waitChecked(e);
+      } catch (err) {
+        if (err.message === "session") break;
+      }
     }
     lot.done++;
     // Le site n'aime pas les rafales : une pause entre deux publications.
@@ -603,6 +639,10 @@ function bindBatch() {
   $("#b-run").addEventListener("click", lotRun);
   $("#b-stop").addEventListener("click", () => { lot.stop = true; toast("Le lot s'arrête après la release en cours."); });
   $("#b-sim").addEventListener("change", lotBar);
+  $("#b-waitcheck").checked = waitCheckSaved();
+  $("#b-waitcheck").addEventListener("change", (ev) => {
+    try { localStorage.setItem("d3x-lot-waitcheck", ev.target.checked ? "1" : "0"); } catch (err) { /* rien */ }
+  });
   $("#b-reset").addEventListener("click", lotReset);
   $("#b-all").addEventListener("change", (ev) => {
     for (const e of lot.entries) if (e.state === lot.tab && e.state !== "published" && e.state !== "duplicate" && e.state !== "error") e.checked = ev.target.checked;

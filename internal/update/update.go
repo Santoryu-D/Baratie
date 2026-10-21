@@ -236,11 +236,15 @@ func Stage(ctx context.Context, pub ed25519.PublicKey, r *Release) (string, erro
 // ErrNoStaged : aucune mise à jour prête à côté du binaire.
 var ErrNoStaged = errors.New("aucune mise à jour prête à côté de D3X")
 
-// exePath : le binaire de D3X, liens symboliques résolus. Le même chemin pour
-// préparer, installer et nettoyer une mise à jour (Stage et Swap ne le
-// calculaient pas pareil : avec un lien dans le chemin, la mise à jour prête
-// restait introuvable au moment de l'installer, retour de Nayr 21/10/26).
-func exePath() (string, error) {
+// startExe : le binaire de D3X tel qu'AU LANCEMENT, liens symboliques
+// résolus. Le même chemin pour préparer, installer, nettoyer et relancer.
+// Sous Linux, os.Executable lit /proc/self/exe, qui SUIT le fichier quand on
+// le renomme : après Swap (le binaire en cours devient « .old »), il désignait
+// l'ancien binaire, que D3X relançait à la place du nouveau, et chaque essai
+// ajoutait un « .old » (Nayr, 21/10/26 : « d3x_linux_arm64.old.old.new »).
+var startExe, startExeErr = resolveExe()
+
+func resolveExe() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -250,6 +254,12 @@ func exePath() (string, error) {
 	}
 	return exe, nil
 }
+
+func exePath() (string, error) { return startExe, startExeErr }
+
+// ExePath : le binaire à relancer après une mise à jour (son chemin au
+// lancement, où la nouvelle version vient d'être mise).
+func ExePath() (string, error) { return exePath() }
 
 // StagedPath : où la mise à jour vérifiée attend d'être installée.
 func StagedPath() (string, error) {
@@ -295,8 +305,24 @@ func Swap() (bool, error) {
 }
 
 // Cleanup efface l'ancien binaire laissé par une mise à jour.
+// Les restes « .old.old… » (et leurs « .new ») d'une mise à jour ratée, qui
+// relançait l'ancien binaire, partent aussi ; jamais le binaire en cours.
 func Cleanup() {
-	if exe, err := exePath(); err == nil {
-		_ = os.Remove(exe + ".old")
+	exe, err := exePath()
+	if err != nil {
+		return
+	}
+	_ = os.Remove(exe + ".old")
+	dir, base := filepath.Dir(exe), filepath.Base(exe)
+	list, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range list {
+		n := e.Name()
+		if e.IsDir() || n == base || !strings.HasPrefix(n, base+".old") {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, n))
 	}
 }

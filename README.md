@@ -137,7 +137,7 @@ Seedbox sous Linux x86_64 ou arm64.
 
 Chaque sous-dossier ou fichier d'un dossier est une release. D3X la publie seule **seulement** si l'œuvre TMDB est trouvée avec certitude (même titre, même année à un an près, bon type), que la catégorie est connue, que le MediaInfo est lu et que V3X n'annonce aucun refus. Jamais pour un exécutable, une collection sans fichier à sa racine ou une release au-delà du plafond de taille. Le reste part « à revoir », avec la raison, et s'ouvre dans Publier d'un clic.
 
-Simulation par défaut, plafond de publications, pause entre deux publications, arrêt propre. Les décisions sont gardées : un lot interrompu reprend où il en était, ce qui est publié n'est plus proposé. Pour recommencer avec d'autres options, « Tout remettre en attente » vide l'onglet ouvert (À revoir, Simulé, Ignoré, Erreur) sans rien publier ni effacer.
+Simulation par défaut, plafond de publications, pause entre deux publications, arrêt propre. Disque lent ? L'option « Attendre la vérification du client » fait vérifier chaque release publiée par ton client avant de passer à la suivante, au lieu d'empiler les vérifications. Les décisions sont gardées : un lot interrompu reprend où il en était, ce qui est publié n'est plus proposé. Pour recommencer avec d'autres options, « Tout remettre en attente » vide l'onglet ouvert (À revoir, Simulé, Ignoré, Erreur) sans rien publier ni effacer.
 
 Une release « à revoir » s'ouvre dans Publier avec **Revoir** : corrige la fiche, puis publie-la tout de suite, ou **Garder pour le lot**. Elle passe alors dans l'onglet **Prête**, et le prochain lot la publie avec ta fiche, telle quelle, sans rien redécider.
 

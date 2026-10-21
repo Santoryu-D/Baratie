@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -135,5 +136,36 @@ func TestSwapWithoutStaged(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), p) {
 		t.Fatalf("le chemin cherché manque dans l'erreur : %v", err)
+	}
+}
+
+// Restes d'une mise à jour ratée (« .old.old », « .old.old.new »…) retirés au
+// lancement, jamais le binaire en cours ni un autre fichier (Nayr, 21/10/26).
+func TestCleanupOldChain(t *testing.T) {
+	exe, err := ExePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, base := filepath.Dir(exe), filepath.Base(exe)
+	junk := []string{base + ".old", base + ".old.old", base + ".old.old.new"}
+	keep := filepath.Join(dir, "autre-fichier.txt")
+	for _, n := range junk {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Skip("dossier du binaire de test non inscriptible")
+		}
+	}
+	_ = os.WriteFile(keep, []byte("x"), 0o644)
+	defer os.Remove(keep)
+	Cleanup()
+	for _, n := range junk {
+		if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+			t.Errorf("%s encore là", n)
+		}
+	}
+	if _, err := os.Stat(exe); err != nil {
+		t.Fatal("le binaire en cours a été touché")
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatal("un autre fichier a été retiré")
 	}
 }
