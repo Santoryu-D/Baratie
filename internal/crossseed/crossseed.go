@@ -47,6 +47,10 @@ const (
 	// Ta copie n'est plus sur le disque (supprimée ou déplacée) alors que le
 	// client la croit complète : rien à ajouter (retour de V3x0r, 21/10/26).
 	StMissing = "missing"
+	// La même vidéo est sur V3X sous une autre forme (nom refait, .nfo en
+	// plus, dossier au lieu d'un fichier seul) : pas « Pas sur V3X » (Luci,
+	// 21/10/26).
+	StSameVideo = "same_video"
 )
 
 // Domaines de V3X : un torrent qui annonce déjà chez nous est ignoré.
@@ -73,6 +77,7 @@ type Sig struct {
 	Total       int64  `json:"total"`
 	Real        int64  `json:"real"` // hors fichiers de bourrage
 	Files       int    `json:"files"`
+	Big         int64  `json:"big,omitempty"` // taille du plus gros fichier
 }
 
 // Row est une release du client (copies sur les mêmes données fusionnées).
@@ -467,6 +472,18 @@ func (e *Engine) runScan(ctx context.Context) error {
 	}
 	e.setProgress("match", len(items), len(items), "")
 
+	var left []*Row
+	for _, k := range order {
+		if r := rowOf[k]; r != nil && r.Status == StNone && r.sig != nil {
+			left = append(left, r)
+		}
+	}
+	// Simple confort : si le site ne répond pas, ces lignes restent « Pas sur
+	// V3X », l'analyse ne tombe pas pour autant.
+	if err := e.markSameVideo(ctx, env.V3X, retry, byID, left, known, fresh); err != nil && ctx.Err() != nil {
+		return errors.New("analyse arrêtée")
+	}
+
 	// Plusieurs copies identiques rangées à des endroits différents (une par
 	// tracker, ou une par client) trouvent la même release V3X : une seule
 	// ligne, la première copie (celle du premier client qui l'a) servira à
@@ -523,6 +540,7 @@ func sigFromClient(ctx context.Context, q client.Client, hash, name string) (*Si
 	s := &Sig{Name: name, ContentHash: torrent.ContentSignature(kept, total), SizeHash: torrent.SizeSignature(kept, total), Total: total, Files: len(kept)}
 	for _, f := range kept {
 		s.Real += f.Size
+		s.Big = max(s.Big, f.Size)
 	}
 	return s, nil
 }
@@ -531,8 +549,88 @@ func sigOf(t *torrent.Torrent) *Sig {
 	s := &Sig{InfoHash: t.InfoHash, Name: t.Name, ContentHash: t.ContentHash, SizeHash: t.SizeHash, Total: t.Total, Files: len(t.Files)}
 	for _, f := range t.Files {
 		s.Real += f.Size
+		s.Big = max(s.Big, f.Size)
 	}
 	return s
+}
+
+// sameVideoMin : en dessous, deux fichiers de même taille peuvent l'être par
+// hasard.
+const sameVideoMin = 200 << 20
+
+// markSameVideo : une release absente du catalogue sous cette forme peut y
+// être sous une autre (nom refait, .nfo en plus, dossier au lieu d'un fichier
+// seul ; Motives chez Luci, 21/10/26). L'empreinte de la release entière ne
+// colle pas, mais son plus gros fichier se retrouve à l'octet près dans une
+// fiche V3X : la ligne passe en « Même vidéo sur V3X », ou en « Déjà dans le
+// client » si cette fiche y est déjà. Seule la taille part au site, comme pour
+// la Médiathèque.
+func (e *Engine) markSameVideo(ctx context.Context, v *v3x.Client, retry *v3x.Retry, byID map[string]Target, rows []*Row, known map[string]bool, fresh map[string]Sig) error {
+	reread := false
+	for _, r := range rows {
+		if r.sig.Big > 0 || ctx.Err() != nil {
+			continue
+		}
+		if r.sig.Files == 1 {
+			r.sig.Big = r.sig.Real
+			continue
+		}
+		// Empreinte d'une version d'avant : la taille du plus gros fichier
+		// manque, le .torrent de cette ligne-là est relu.
+		if s, err := sigFromClient(ctx, byID[r.Client].Client, r.hash, r.Name); err == nil {
+			r.sig = s
+			fresh[r.hash] = *s
+			reread = true
+		}
+	}
+	if reread {
+		saveSigCache(fresh)
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.New("analyse arrêtée")
+	}
+	bySize := map[int64][]*Row{}
+	var sizes []int64
+	for _, r := range rows {
+		if r.sig.Big < sameVideoMin {
+			continue
+		}
+		if bySize[r.sig.Big] == nil {
+			sizes = append(sizes, r.sig.Big)
+		}
+		bySize[r.sig.Big] = append(bySize[r.sig.Big], r)
+	}
+	for i := 0; i < len(sizes); i += v3x.MatchFilesSize {
+		res, err := v.MatchFiles(ctx, retry, sizes[i:min(i+v3x.MatchFilesSize, len(sizes))])
+		if err != nil {
+			return err
+		}
+		for size, list := range res {
+			if len(list) == 0 {
+				continue
+			}
+			// La fiche déjà dans un client d'abord, sinon la plus seedée.
+			best, inClient := list[0], false
+			for _, m := range list {
+				if known[strings.ToLower(m.InfoHash)] {
+					best, inClient = m, true
+					break
+				}
+				if m.Seeders > best.Seeders {
+					best = m
+				}
+			}
+			for _, r := range bySize[size] {
+				r.Match = &v3x.Match{Kind: "same_video", ID: best.ID, Name: best.Name, InfoHash: best.InfoHash, Seeders: best.Seeders, Leechers: best.Leechers, Size: best.Size}
+				if inClient {
+					r.Status, r.Detail = StInClient, "la même vidéo est déjà dans ton client avec la fiche V3X « "+best.Name+" »"
+				} else {
+					r.Status, r.Detail = StSameVideo, "la même vidéo est sur V3X dans « "+best.Name+" », sous un autre nom ou avec d'autres fichiers à côté"
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func loadSigCache() map[string]Sig {
@@ -590,7 +688,7 @@ func (e *Engine) statusOf(r *Row) string {
 
 // Groupes de la page (un onglet chacun) : à l'intérieur d'un groupe, l'ordre
 // ne dépend pas du statut, pour que les lignes ne sautent pas pendant l'ajout.
-var statusGroup = map[string]int{StAdd: 0, StQueued: 0, StChecking: 0, StFailed: 0, StSeeding: 1, StInClient: 1, StOnV3X: 1, StRenamed: 2, StNone: 3, StPartial: 4, StError: 4, StRemoved: 4}
+var statusGroup = map[string]int{StAdd: 0, StQueued: 0, StChecking: 0, StFailed: 0, StSeeding: 1, StInClient: 1, StOnV3X: 1, StRenamed: 2, StSameVideo: 3, StNone: 3, StPartial: 4, StError: 4, StRemoved: 4}
 
 // Rows renvoie les lignes, les plus utiles d'abord : à ajouter, et parmi
 // elles les releases les moins seedées sur V3X (celles qui ont besoin de toi).

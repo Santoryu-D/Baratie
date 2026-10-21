@@ -16,7 +16,7 @@ const TABS = [
   { id: "done", label: "Déjà en seed pour V3X", statuses: ["seeding", "in_client", "on_v3x"], empty: "Aucun torrent V3X dans ce client pour l'instant." },
   { id: "renamed", label: "Noms différents", statuses: ["renamed"], selectable: true, empty: "", note: "Mêmes fichiers que sur V3X, sous d'autres noms. D3X ajoute la release V3X à l'arrêt, donne à ses fichiers les noms de ta copie dans le client, puis vérifie : elle ne démarre qu'à 100 %. Rien n'est créé, déplacé ni renommé sur ton disque." },
   { id: "none", label: "Pas sur V3X", statuses: ["none"], selectable: true, empty: "", note: "Ces releases n'existent pas sur V3X : de bonnes candidates à un upload. « Publier » ouvre la fiche d'une release ; coches-en plusieurs pour les passer au crible du Lot." },
-  { id: "other", label: "Autres", statuses: ["partial", "error", "removed", "missing"], empty: "" },
+  { id: "other", label: "Autres", statuses: ["same_video", "partial", "error", "removed", "missing"], empty: "" },
 ];
 
 const STATUS = {
@@ -29,6 +29,7 @@ const STATUS = {
   on_v3x: ["Seedé pour V3X", "ok"],
   renamed: ["Noms différents", "warn"],
   none: ["Pas sur V3X", ""],
+  same_video: ["Même vidéo sur V3X", ""],
   partial: ["Téléchargé en partie", ""],
   error: ["Illisible", "bad"],
   missing: ["Absente du disque", "bad"],
@@ -54,6 +55,7 @@ const ui = {
   relayPrime: 0,
   relVersion: -1,
   view: "cross",
+  showIgnored: false, // « Pas sur V3X » : réafficher les releases ignorées
 };
 
 // ---------- utilitaires ----------
@@ -916,6 +918,8 @@ function setOf(r) {
 }
 
 function checkable(r) {
+  // Une release ignorée cachée ne se coche pas avec « Tout cocher ».
+  if (!ui.showIgnored && r.status === "none" && ignoredSet().has(r.key)) return false;
   return canAdd(r) || canPick(r);
 }
 
@@ -950,6 +954,28 @@ async function loadPolicies() {
 
 function hideForbidden() {
   try { return localStorage.getItem("d3x-hide-forbidden") === "1"; } catch (e) { return false; }
+}
+
+// Releases de « Pas sur V3X » écartées par le membre (source interdite sur
+// V3X, release qu'il ne publiera pas) : elles ne reviennent plus à chaque
+// analyse (suggestion de Luci, 21/10/26). Gardé sur l'appareil.
+let ignCache = null;
+function ignoredSet() {
+  if (!ignCache) {
+    try { ignCache = new Set(JSON.parse(localStorage.getItem("d3x-ignored") || "[]")); } catch (e) { ignCache = new Set(); }
+  }
+  return ignCache;
+}
+
+function toggleIgnored(r) {
+  const s = ignoredSet();
+  if (s.has(r.key)) s.delete(r.key);
+  else {
+    s.add(r.key);
+    ui.picked.delete(r.key);
+  }
+  try { localStorage.setItem("d3x-ignored", JSON.stringify([...s])); } catch (e) { /* rien */ }
+  renderRows();
 }
 
 // Relais ouverts (releases rares lâchées, prime au repreneur).
@@ -1087,7 +1113,14 @@ async function lotPicked() {
 
 function renderRows() {
   const counts = {};
+  const ign = ignoredSet();
+  const isIgnored = (r) => r.status === "none" && ign.has(r.key);
+  let nIgnored = 0;
   for (const r of ui.rows) {
+    if (isIgnored(r)) {
+      nIgnored++;
+      if (!ui.showIgnored) continue;
+    }
     const t = tabOfRow(r).id;
     counts[t] = (counts[t] || 0) + 1;
   }
@@ -1110,7 +1143,13 @@ function renderRows() {
     tabs.append(b);
   }
   const tab = TABS.find((t) => t.id === ui.tab) || TABS[0];
-  let list = ui.rows.filter((r) => tabOfRow(r).id === tab.id);
+  let list = ui.rows.filter((r) => tabOfRow(r).id === tab.id && (ui.showIgnored || !isIgnored(r)));
+  const ignLine = $("#ign-line");
+  ignLine.classList.toggle("hidden", tab.id !== "none" || !nIgnored);
+  if (tab.id === "none" && nIgnored) {
+    $("#ign-text").textContent = nIgnored + " " + plural(nIgnored, "release ignorée", "releases ignorées") + (ui.showIgnored ? ", affichée" + (nIgnored > 1 ? "s" : "") + " avec les autres." : ".");
+    $("#ign-toggle").textContent = ui.showIgnored ? "Les masquer" : "Les réafficher";
+  }
   // Pas sur V3X : les releases d'une team qui interdit le réupload, masquées
   // sur demande ; puis celles qu'un membre demande d'abord, les mieux primées en tête.
   const forbidden = tab.id === "none" ? list.filter((r) => ui.pols[r.key] && ui.pols[r.key].policy === "forbidden").length : 0;
@@ -1266,6 +1305,16 @@ function rowEl(r) {
     b.type = "button";
     b.title = "Ouvre la fiche de cette release dans Publier : le .torrent est fabriqué sur ses fichiers, puis elle part en seed.";
     b.addEventListener("click", () => publishRow(r, b));
+    box.append(b);
+  }
+  if (r.status === "none") {
+    const ignored = ignoredSet().has(r.key);
+    const b = el("button", "btn small", ignored ? "Ne plus ignorer" : "Ignorer");
+    b.type = "button";
+    b.title = ignored
+      ? "La release revient dans « Pas sur V3X »."
+      : "Écarte cette release de « Pas sur V3X » (source interdite sur V3X, release que tu ne publieras pas) : elle ne revient plus à chaque analyse.";
+    b.addEventListener("click", () => toggleIgnored(r));
     box.append(b);
   }
   if (r.status === "failed") {
@@ -1480,6 +1529,10 @@ async function boot() {
   });
   $("#f-hide-forbidden").addEventListener("change", (ev) => {
     try { localStorage.setItem("d3x-hide-forbidden", ev.target.checked ? "1" : "0"); } catch (e) { /* rien */ }
+    renderRows();
+  });
+  $("#ign-toggle").addEventListener("click", () => {
+    ui.showIgnored = !ui.showIgnored;
     renderRows();
   });
   $("#scan").addEventListener("click", async () => {
