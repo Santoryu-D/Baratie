@@ -92,6 +92,65 @@ func TestSameVideo(t *testing.T) {
 	}
 }
 
+// Un installeur de jeu découpé en morceaux de taille fixe (Nayr, 22/10/26 :
+// un Terminator pris pour Baldur's Gate 3) : son plus gros fichier n'est pas une
+// vidéo, sa taille ne part pas au site et la ligne reste « Pas sur V3X ».
+func TestSameVideoIgnoresGameParts(t *testing.T) {
+	isolatedConfig(t)
+	const part = int64(300_000_000)
+	raw := mkTorrent("terminator_win_gog", map[string]int64{
+		"terminator_win_gog/setup_terminator.exe":   5_000_000,
+		"terminator_win_gog/setup_terminator-1.bin": part,
+		"terminator_win_gog/setup_terminator-2.bin": part - 1000,
+	}, "https://autre.invalid/announce", "AUTRE")
+	p, _ := torrent.Parse(raw)
+	fq := &fakeQbit{list: map[string]*fakeTorrent{}, complete: map[string]float64{}}
+	h := strings.ToLower(p.InfoHash)
+	fq.list[h] = &fakeTorrent{Torrent: qbit.Torrent{
+		Hash: h, Name: p.Name, SavePath: "/data", ContentPath: "/data/" + p.Name, Progress: 1, State: "stalledUP",
+		Size: p.Total, TotalSize: p.Total, MagnetURI: "magnet:?xt=urn:btih:" + h + "&tr=https%3A%2F%2Fautre.invalid%2Fannounce",
+	}, raw: raw}
+	qs := httptest.NewServer(fq.handler(t))
+	defer qs.Close()
+	var asked []int64
+	vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/me":
+			io.WriteString(w, `{"username":"test","ratio":2.5,"hitAndRun":0}`)
+		case "/api/d3x/match":
+			io.WriteString(w, `{"results":[]}`)
+		case "/api/d3x/match-files":
+			var in struct{ Sizes []int64 }
+			json.NewDecoder(r.Body).Decode(&in)
+			asked = append(asked, in.Sizes...)
+			json.NewEncoder(w).Encode(map[string]interface{}{"matches": map[string][]v3x.FileMatch{
+				"300000000": {{ID: "55555555-5555-4555-8555-555555555555", Name: "baldurs.gate.3.GOG", InfoHash: strings.Repeat("ab", 20), Size: 135 << 30, FileCount: 40, Seeders: 4}},
+			}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vs.Close()
+	q, _ := client.New(client.Options{URL: qs.URL, User: "admin", Pass: "secret"})
+	e := New(oneClient(q, v3x.New(vs.URL, "cle", "D3X/test"), config.Defaults()))
+	if err := e.StartScan(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return !e.Scanning() })
+	if len(asked) != 0 {
+		t.Fatalf("tailles d'un installeur envoyées au site : %v", asked)
+	}
+	for _, r := range e.Rows() {
+		if r.Name == p.Name {
+			if r.Status != StNone || r.Match != nil {
+				t.Fatalf("installeur de jeu : %s (%s), attendu %s", r.Status, r.Detail, StNone)
+			}
+			return
+		}
+	}
+	t.Fatalf("ligne absente : %+v", e.Rows())
+}
+
 // Une release seedée sur plusieurs trackers (un torrent chacun, sur des liens
 // physiques ailleurs) : une seule ligne « Pas sur V3X », copies comptées
 // (exodius19, 21/10/26 : quatre fois le même Astérix).

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -80,7 +81,24 @@ type Sig struct {
 	Total       int64  `json:"total"`
 	Real        int64  `json:"real"` // hors fichiers de bourrage
 	Files       int    `json:"files"`
-	Big         int64  `json:"big,omitempty"` // taille du plus gros fichier
+	Big         int64  `json:"big,omitempty"`    // taille du plus gros fichier
+	BigExt      string `json:"bigExt,omitempty"` // son extension (« . » s'il n'en a pas)
+}
+
+// noteFile compte un fichier dans l'empreinte et retient le plus gros.
+func (s *Sig) noteFile(p string, size int64) {
+	s.Real += size
+	if size > s.Big {
+		s.Big, s.BigExt = size, extOf(p)
+	}
+}
+
+// extOf : l'extension en minuscules, « . » pour un fichier sans extension.
+func extOf(p string) string {
+	if e := strings.ToLower(path.Ext(p)); e != "" {
+		return e
+	}
+	return "."
 }
 
 // Row est une release du client (copies sur les mêmes données fusionnées).
@@ -580,8 +598,7 @@ func sigFromClient(ctx context.Context, q client.Client, hash, name string) (*Si
 	}
 	s := &Sig{Name: name, ContentHash: torrent.ContentSignature(kept, total), SizeHash: torrent.SizeSignature(kept, total), Total: total, Files: len(kept)}
 	for _, f := range kept {
-		s.Real += f.Size
-		s.Big = max(s.Big, f.Size)
+		s.noteFile(f.Path, f.Size)
 	}
 	return s, nil
 }
@@ -589,8 +606,7 @@ func sigFromClient(ctx context.Context, q client.Client, hash, name string) (*Si
 func sigOf(t *torrent.Torrent) *Sig {
 	s := &Sig{InfoHash: t.InfoHash, Name: t.Name, ContentHash: t.ContentHash, SizeHash: t.SizeHash, Total: t.Total, Files: len(t.Files)}
 	for _, f := range t.Files {
-		s.Real += f.Size
-		s.Big = max(s.Big, f.Size)
+		s.noteFile(f.Path, f.Size)
 	}
 	return s
 }
@@ -598,6 +614,12 @@ func sigOf(t *torrent.Torrent) *Sig {
 // sameVideoMin : en dessous, deux fichiers de même taille peuvent l'être par
 // hasard.
 const sameVideoMin = 200 << 20
+
+// sameVideoExt : « Même vidéo » ne vaut que pour une vraie vidéo. Les
+// installeurs de jeux découpés en morceaux de taille fixe (setup-1.bin…) font
+// la même taille d'un jeu à l'autre (Nayr, 22/10/26 : un Terminator pris pour
+// Baldur's Gate 3), et une image disque (.iso) peut aussi être un jeu.
+var sameVideoExt = map[string]bool{".mkv": true, ".mp4": true, ".avi": true, ".m2ts": true, ".ts": true, ".mov": true, ".wmv": true, ".webm": true, ".mpg": true, ".mpeg": true, ".m4v": true, ".vob": true}
 
 // markSameVideo : une release absente du catalogue sous cette forme peut y
 // être sous une autre (nom refait, .nfo en plus, dossier au lieu d'un fichier
@@ -609,15 +631,15 @@ const sameVideoMin = 200 << 20
 func (e *Engine) markSameVideo(ctx context.Context, v *v3x.Client, retry *v3x.Retry, byID map[string]Target, rows []*Row, known map[string]bool, fresh map[string]Sig) error {
 	reread := false
 	for _, r := range rows {
-		if r.sig.Big > 0 || ctx.Err() != nil {
+		if (r.sig.Big > 0 && r.sig.BigExt != "") || ctx.Err() != nil {
 			continue
 		}
 		if r.sig.Files == 1 {
-			r.sig.Big = r.sig.Real
+			r.sig.Big, r.sig.BigExt = r.sig.Real, extOf(r.sig.Name)
 			continue
 		}
-		// Empreinte d'une version d'avant : la taille du plus gros fichier
-		// manque, le .torrent de cette ligne-là est relu.
+		// Empreinte d'une version d'avant : la taille ou l'extension du plus
+		// gros fichier manque, le .torrent de cette ligne-là est relu.
 		if s, err := sigFromClient(ctx, byID[r.Client].Client, r.hash, r.Name); err == nil {
 			r.sig = s
 			fresh[r.hash] = *s
@@ -633,7 +655,7 @@ func (e *Engine) markSameVideo(ctx context.Context, v *v3x.Client, retry *v3x.Re
 	bySize := map[int64][]*Row{}
 	var sizes []int64
 	for _, r := range rows {
-		if r.sig.Big < sameVideoMin {
+		if r.sig.Big < sameVideoMin || !sameVideoExt[r.sig.BigExt] {
 			continue
 		}
 		if bySize[r.sig.Big] == nil {
