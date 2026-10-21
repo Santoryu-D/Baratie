@@ -62,6 +62,9 @@ type Config struct {
 
 	// Seedbox jointe par SSH (sans secret : le mot de passe n'est jamais écrit).
 	SSH *SSH `json:"ssh,omitempty"`
+	// Seedboxes déjà connectées (sans secret), pour passer de l'une à
+	// l'autre d'un clic (GoodMoviesForBadPeople, 21/10/26). SSH est l'actuelle.
+	SSHSaved []SSH `json:"sshSaved,omitempty"`
 
 	// Apparence : fond (dark, light, blue) et accent ; vide = comme sur V3X.
 	UITheme  string `json:"uiTheme,omitempty"`
@@ -310,3 +313,33 @@ type SSH struct {
 
 // Label : « user@hôte ».
 func (c SSH) Label() string { return c.User + "@" + c.Host }
+
+// Same : même seedbox (adresse, port et utilisateur).
+func (c SSH) Same(o SSH) bool {
+	return strings.EqualFold(c.Host, o.Host) && c.Port == o.Port && c.User == o.User
+}
+
+// MaxSSHSaved : seedboxes gardées au plus dans SSHSaved.
+const MaxSSHSaved = 8
+
+// RememberSSH met c en tête des seedboxes enregistrées (remplace la même).
+func (cfg *Config) RememberSSH(c SSH) {
+	out := []SSH{c}
+	for _, o := range cfg.SSHSaved {
+		if !o.Same(c) && len(out) < MaxSSHSaved {
+			out = append(out, o)
+		}
+	}
+	cfg.SSHSaved = out
+}
+
+// ForgetSSH retire c des seedboxes enregistrées.
+func (cfg *Config) ForgetSSH(c SSH) {
+	out := cfg.SSHSaved[:0:0]
+	for _, o := range cfg.SSHSaved {
+		if !o.Same(c) {
+			out = append(out, o)
+		}
+	}
+	cfg.SSHSaved = out
+}

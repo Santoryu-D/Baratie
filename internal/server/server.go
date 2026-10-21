@@ -329,6 +329,8 @@ type stateOut struct {
 		Port       int    `json:"port,omitempty"`
 		User       string `json:"user,omitempty"`
 		KeyPath    string `json:"keyPath,omitempty"`
+		// Seedboxes déjà connectées, l'actuelle en tête.
+		Saved []sshSavedOut `json:"saved,omitempty"`
 	} `json:"ssh"`
 	Appearance struct {
 		Theme         string `json:"theme"`   // appliqué
@@ -373,6 +375,13 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	if c := s.cfg.SSH; c != nil {
 		o.SSH.Configured, o.SSH.Label, o.SSH.Host, o.SSH.Port, o.SSH.User, o.SSH.KeyPath = true, c.Label(), c.Host, c.Port, c.User, c.KeyPath
 		o.SSH.OK, o.SSH.System, o.SSH.Error = s.ssh != nil, s.sshSys, s.sshErr
+		o.SSH.Saved = append(o.SSH.Saved, sshSavedOut{c.Label(), c.Host, c.Port, c.User, c.KeyPath})
+	}
+	for _, c := range s.cfg.SSHSaved {
+		if s.cfg.SSH != nil && c.Same(*s.cfg.SSH) {
+			continue
+		}
+		o.SSH.Saved = append(o.SSH.Saved, sshSavedOut{c.Label(), c.Host, c.Port, c.User, c.KeyPath})
 	}
 	// Apparence : choix fait dans D3X, sinon celui du profil V3X, sinon le
 	// défaut du site (sombre, bleu).

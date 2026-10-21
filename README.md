@@ -38,6 +38,8 @@ L'analyse range tes releases en onglets :
   - **Absente du disque** : le client croit la copie complète, mais ses fichiers ne sont plus là (supprimés, ou déplacés par un outil de médiathèque). D3X ne l'ajoute pas.
   - **Retirée de V3X** : aucune fiche en ligne, mais V3X a retiré (ou remplacé, archivé) une fiche de ce contenu. D3X ne la propose pas à la publication ; le motif s'affiche si c'était ta fiche. Publier reste possible si la raison ne s'applique plus.
 
+Au-dessus de la liste, **Filtrer** ne garde que les releases dont le nom contient tous tes mots ; un mot précédé de « - » les écarte (`1080p MULTi -720p`, ou le tag d'une team). « Tout cocher » ne prend que ce qui est affiché.
+
 Une release que tu ne veux pas seeder pour l'instant : **Ignorer** la retire de la liste et de « Tout cocher », et elle ne revient plus à chaque analyse. Ça marche dans « À ajouter », « Noms différents » et « Pas sur V3X » ; « Les réafficher » la retrouve. La liste des releases ignorées reste sur l'appareil.
 
 D3X retrouve les fichiers d'une release sur ce PC, sur ta seedbox, ou sur un NAS si tu lui indiques où il voit les dossiers du client (Réglages ▸ Clients torrent ▸ Dossiers du client).
@@ -101,6 +103,7 @@ Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et
 - **Présentation en HTML** pour les membres que V3X y autorise (même règle que le site) : choix BBCode ou HTML au-dessus de l'éditeur, retenu sur l'appareil, et aperçu tel que le site l'affichera.
 - **Rapport VirusTotal** demandé pour les catégories où V3X l'exige (applications, jeux), compté dans « Il manque » tant qu'il n'est pas rempli.
 - **Image du PC** : un bouton de la barre d'outils envoie une image de ton ordinateur (pochette, capture), hébergée sur V3X avec ta clé, et l'insère dans la présentation.
+- **Charger un fichier** : remplace la présentation par celle d'un fichier, un .txt en BBCode, ou un .html si V3X t'autorise la présentation en HTML.
 - **Pochette Discogs** : pour un album sans pochette sur MusicBrainz, avec ton jeton Discogs (Réglages ; il se crée sur discogs.com ▸ Paramètres ▸ Développeurs). Tu choisis l'édition, D3X récupère sa pochette en grand, l'héberge sur V3X et la place en tête de la présentation.
 - **Seed automatique**, même quand ton client tourne sur un NAS ou dans Docker : D3X devine où le client voit tes fichiers, d'après les torrents qu'il seede déjà.
 - Fichiers cachés et aperçus de médiathèque écartés (`.DS_Store`, `*.trickplay`, `extrafanart`…), liens symboliques suivis sans boucle, fichier encore en cours d'écriture détecté.
@@ -122,7 +125,7 @@ Le lot ne publie seul un album que si l'édition est certaine (tags, ou mêmes p
 
 ## Depuis une seedbox (SSH)
 
-Tes releases sont sur une seedbox ? Pas besoin de les rapatrier : dans Réglages ▸ Seedbox (SSH), indique l'adresse, ton utilisateur et ton mot de passe (ou ta clé SSH). Publier et Lot proposent alors « Ce PC » ou ta seedbox.
+Tes releases sont sur une seedbox ? Pas besoin de les rapatrier : dans Réglages ▸ Seedbox (SSH), indique l'adresse, ton utilisateur et ton mot de passe (ou ta clé SSH). Publier et Lot proposent alors « Ce PC » ou ta seedbox. Plusieurs seedboxes ? Chacune reste enregistrée (sans mot de passe) : choisis-la dans « Seedboxes enregistrées », puis « Se connecter ».
 
 - D3X y dépose son **agent** (un petit programme Linux de 1,4 Mio, compilé avec chaque version, dans `~/.d3x`) qui liste, hache et lit les fichiers **sur place**. Seuls la liste des fichiers, le .torrent et les morceaux lus par MediaInfo reviennent sur ton PC, par la connexion SSH chiffrée.
 - L'agent est vérifié par son empreinte SHA-256 avant chaque usage ; il est remplacé à la version suivante de D3X.

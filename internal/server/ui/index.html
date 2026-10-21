@@ -75,6 +75,10 @@
     <div class="notice warn hidden" id="scan-warn"></div>
 
     <div class="tabs hidden" id="tabs" role="tablist"></div>
+    <div class="list-filter hidden" id="list-filter">
+      <input type="text" id="f-text" spellcheck="false" autocomplete="off" aria-label="Filtrer la liste" placeholder="Filtrer : 1080p MULTi -720p (un « - » devant un mot l'écarte)">
+      <span class="small muted" id="f-text-n"></span>
+    </div>
     <label class="check small hidden" id="none-filter"><input type="checkbox" id="f-hide-forbidden"> Masquer les releases des teams qui interdisent le réupload</label>
     <p class="small muted hidden" id="ign-line"><span id="ign-text"></span> <button type="button" class="linkish" id="ign-toggle"></button></p>
 
@@ -298,6 +302,8 @@
             </div>
             <select id="f-tpl" aria-label="Modèle de présentation"></select>
             <button class="btn small" id="regen" title="Refaire la présentation à partir de la fiche (tes retouches seront perdues)">Régénérer</button>
+            <button class="btn small" id="desc-file" title="Remplacer la présentation par celle d'un fichier : .txt en BBCode, ou .html si V3X t'y autorise">Charger un fichier</button>
+            <input type="file" id="desc-file-in" accept=".txt,.bbcode,.html,.htm,text/plain,text/html" hidden>
             <div class="tabs-ed" role="tablist">
               <button class="tab small" id="ed-tab-edit" role="tab" aria-selected="true">Éditer</button>
               <button class="tab small" id="ed-tab-prev" role="tab" aria-selected="false">Aperçu</button>
@@ -454,6 +460,10 @@
     <fieldset id="ssh-set">
       <legend>Seedbox (SSH)</legend>
       <p class="hint">Pour publier ce qui est sur ta seedbox sans rien rapatrier : D3X y dépose son petit agent (dans <code>~/.d3x</code>), qui lit et hache les fichiers sur place. Seul le .torrent revient. Le client torrent de la seedbox doit être dans tes clients, au-dessus.</p>
+      <div class="hidden" id="s-saved-row">
+        <label for="s-saved">Seedboxes enregistrées</label>
+        <select id="s-saved" aria-label="Choisir une seedbox enregistrée"></select>
+      </div>
       <div class="two port">
         <div><label for="s-host">Adresse</label><input id="s-host" type="text" autocomplete="off" spellcheck="false" placeholder="ma-seedbox.exemple.net"></div>
         <div><label for="s-port">Port</label><input id="s-port" type="number" min="1" max="65535" placeholder="22"></div>

@@ -88,6 +88,13 @@ func (s *Server) sshTest(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	if old := s.cfg.SSH; old != nil && old.Host == cfg.Host && old.Port == cfg.Port {
 		cfg.HostKey = old.HostKey
+	} else {
+		for _, o := range s.cfg.SSHSaved {
+			if o.Host == cfg.Host && o.Port == cfg.Port && o.HostKey != "" {
+				cfg.HostKey = o.HostKey
+				break
+			}
+		}
 	}
 	s.mu.Unlock()
 	s.trySSH(w, r, cfg, in.Secret)
@@ -114,7 +121,14 @@ func (s *Server) trySSH(w http.ResponseWriter, r *http.Request, cfg remote.Confi
 		return
 	}
 	saved := cfg
-	if err := s.updateConfig(func(c *config.Config) { c.SSH = &saved }); err != nil {
+	if err := s.updateConfig(func(c *config.Config) {
+		// La seedbox d'avant reste dans la liste (installations d'avant 1.1.18).
+		if c.SSH != nil {
+			c.RememberSSH(*c.SSH)
+		}
+		c.SSH = &saved
+		c.RememberSSH(saved)
+	}); err != nil {
 		fail(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -147,7 +161,12 @@ func (s *Server) sshAccept(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sshForget(w http.ResponseWriter, r *http.Request) {
-	if err := s.updateConfig(func(c *config.Config) { c.SSH = nil }); err != nil {
+	if err := s.updateConfig(func(c *config.Config) {
+		if c.SSH != nil {
+			c.ForgetSSH(*c.SSH)
+		}
+		c.SSH = nil
+	}); err != nil {
 		fail(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -170,4 +189,13 @@ func (s *Server) updateConfig(f func(*config.Config)) error {
 	s.cfg = &c
 	s.mu.Unlock()
 	return config.Save(&c)
+}
+
+// sshSavedOut : une seedbox enregistrée, telle que la page la propose.
+type sshSavedOut struct {
+	Label   string `json:"label"`
+	Host    string `json:"host"`
+	Port    int    `json:"port,omitempty"`
+	User    string `json:"user"`
+	KeyPath string `json:"keyPath,omitempty"`
 }

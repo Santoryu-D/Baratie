@@ -1082,6 +1082,27 @@ function bindPublish() {
   $("#f-team").addEventListener("change", () => { pub.dirty.team = true; loadFicheSoon(); });
   $("#f-tpl").addEventListener("change", () => loadFiche(false));
   $("#regen").addEventListener("click", () => { pub.dirty.desc = false; setFormat("standard"); loadFiche(false); });
+  // Présentation chargée d'un fichier (GoodMoviesForBadPeople, 21/10/26) :
+  // .html en HTML si V3X l'autorise, sinon le texte part en BBCode.
+  $("#desc-file").addEventListener("click", () => $("#desc-file-in").click());
+  $("#desc-file-in").addEventListener("change", async (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (!f) return;
+    if (f.size > 2 * 1024 * 1024) return toast("Fichier trop lourd pour une présentation (2 Mio au plus).", "bad");
+    const isHtml = /\.html?$/i.test(f.name) || f.type === "text/html";
+    if (isHtml && !canHtml()) return toast("V3X ne t'autorise pas encore la présentation en HTML : charge un .txt en BBCode.", "bad");
+    let text;
+    try {
+      text = await f.text();
+    } catch (e) {
+      return toast("Fichier illisible.", "bad");
+    }
+    $("#f-desc").value = text;
+    pub.dirty.desc = true;
+    setFormat(isHtml ? "html" : "standard");
+    toast("Présentation chargée depuis " + f.name + ".", "ok");
+  });
   $("#fmt-bb").addEventListener("click", () => chooseFormat("standard"));
   $("#fmt-html").addEventListener("click", () => chooseFormat("html"));
   $("#f-desc").addEventListener("input", () => { pub.dirty.desc = true; previewSoon(); });

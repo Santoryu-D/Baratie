@@ -41,6 +41,8 @@ const PAGE = 400;
 const UUID = /^[0-9a-f-]{36}$/i;
 
 const ui = {
+  // Filtre texte des listes (quebecman, 21/10/26) : mots à garder, « -mot » à écarter.
+  filter: "",
   state: null,
   rows: [],
   version: -1,
@@ -650,6 +652,17 @@ function fillSSH() {
   $("#s-secret").value = "";
   $("#s-forget").classList.toggle("hidden", !x.configured);
   $("#s-hostkey").classList.add("hidden");
+  // Seedboxes déjà connectées (GoodMoviesForBadPeople, 21/10/26) : en choisir
+  // une remplit le formulaire, « Se connecter » passe dessus.
+  const saved = x.saved || [];
+  const sel = $("#s-saved");
+  sel.replaceChildren();
+  for (const [i, o] of saved.entries()) {
+    const opt = el("option", null, o.label + (o.port ? ":" + o.port : "") + (i === 0 && x.configured ? " (actuelle)" : ""));
+    opt.value = String(i);
+    sel.append(opt);
+  }
+  $("#s-saved-row").classList.toggle("hidden", saved.length < 2);
   setStatus("#ssh-status", x.configured, x.ok, x.ok ? "Connecté à " + x.label + (x.system ? " (" + x.system + ")" : "") : x.error || "Pas connectée : redonne le mot de passe (ou la phrase de passe de ta clé), puis « Se connecter ».");
 }
 
@@ -694,6 +707,19 @@ function bindSSH() {
     secret: $("#s-secret").value,
   }, $("#s-connect")));
   $("#s-secret").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#s-connect").click(); } });
+  $("#s-saved").addEventListener("change", (ev) => {
+    const o = ((ui.state && ui.state.ssh && ui.state.ssh.saved) || [])[Number(ev.target.value)];
+    if (!o) return;
+    $("#s-host").value = o.host || "";
+    $("#s-port").value = o.port || "";
+    $("#s-user").value = o.user || "";
+    $("#s-key").value = o.keyPath || "";
+    $("#s-secret").value = "";
+    $("#s-secret").focus();
+    const st = $("#ssh-status");
+    st.className = "status";
+    st.textContent = "Seedbox " + o.label + " choisie : mot de passe (ou phrase de passe de ta clé) si elle en demande un, puis « Se connecter ».";
+  });
   $("#s-accept").addEventListener("click", () => sshCall("/ui/ssh/accept", { fingerprint: $("#s-hostkey").dataset.fp || "" }, $("#s-accept")));
   $("#s-reject").addEventListener("click", () => {
     $("#s-hostkey").classList.add("hidden");
@@ -931,9 +957,20 @@ function setOf(r) {
   return canPick(r) ? ui.picked : ui.selected;
 }
 
+// Filtre texte : chaque mot doit être dans le nom (celui du client ou de V3X),
+// un mot précédé de « - » l'écarte. « 1080p MULTi -720p » ; vide = tout.
+function filterMatch(r) {
+  const words = ui.filter.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const name = (r.name + " " + (r.match && r.match.name ? r.match.name : "")).toLowerCase();
+  return words.every((w) => (w[0] === "-" && w.length > 1 ? !name.includes(w.slice(1)) : name.includes(w)));
+}
+
 function checkable(r) {
-  // Une release ignorée cachée ne se coche pas avec « Tout cocher ».
+  // Une release ignorée cachée ne se coche pas avec « Tout cocher », ni une
+  // release écartée par le filtre.
   if (!ui.showIgnored && ignorable(r) && ignoredSet().has(r.key)) return false;
+  if (!filterMatch(r)) return false;
   return canAdd(r) || canPick(r);
 }
 
@@ -1148,6 +1185,7 @@ function renderRows() {
   }
   const has = ui.rows.length > 0;
   $("#tabs").classList.toggle("hidden", !has);
+  $("#list-filter").classList.toggle("hidden", !has);
   $("#table-wrap").classList.toggle("hidden", !has);
   const tabs = $("#tabs");
   tabs.replaceChildren();
@@ -1168,6 +1206,9 @@ function renderRows() {
   }
   const tab = TABS.find((t) => t.id === ui.tab) || TABS[0];
   let list = ui.rows.filter((r) => tabOfRow(r).id === tab.id && (ui.showIgnored || !isIgnored(r)));
+  const before = list.length;
+  list = list.filter(filterMatch);
+  $("#f-text-n").textContent = ui.filter.trim() ? list.length + " sur " + before : "";
   const ignLine = $("#ign-line");
   const nIgnored = nIgnoredIn[tab.id] || 0;
   ignLine.classList.toggle("hidden", !nIgnored);
@@ -1575,6 +1616,18 @@ async function boot() {
       if (ev.target.checked) setOf(r).add(r.key);
       else setOf(r).delete(r.key);
     }
+    renderRows();
+  });
+  $("#f-text").addEventListener("input", (ev) => {
+    ui.filter = ev.target.value;
+    // Ce que le filtre cache ne reste pas coché : « Tout cocher » puis
+    // « Ajouter » ne prennent que ce qui est affiché.
+    for (const r of ui.rows) {
+      if (filterMatch(r)) continue;
+      ui.selected.delete(r.key);
+      ui.picked.delete(r.key);
+    }
+    ui.shown = PAGE;
     renderRows();
   });
   $("#f-hide-forbidden").addEventListener("change", (ev) => {

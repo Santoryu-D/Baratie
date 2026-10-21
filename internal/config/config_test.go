@@ -138,3 +138,27 @@ func TestClientIDs(t *testing.T) {
 		t.Fatalf("NewClientID : %s %s", a, b)
 	}
 }
+
+// Seedboxes enregistrées : la dernière en tête, sans doublon, plafonnées ;
+// oublier n'en retire qu'une.
+func TestRememberSSH(t *testing.T) {
+	var c Config
+	a := SSH{Host: "a.example", User: "u"}
+	b := SSH{Host: "b.example", Port: 2222, User: "u"}
+	c.RememberSSH(a)
+	c.RememberSSH(b)
+	c.RememberSSH(SSH{Host: "A.example", User: "u", HostKey: "k"})
+	if len(c.SSHSaved) != 2 || c.SSHSaved[0].HostKey != "k" || !c.SSHSaved[1].Same(b) {
+		t.Fatalf("liste inattendue : %+v", c.SSHSaved)
+	}
+	for i := 0; i < 20; i++ {
+		c.RememberSSH(SSH{Host: "h" + string(rune('a'+i)), User: "u"})
+	}
+	if len(c.SSHSaved) != MaxSSHSaved {
+		t.Fatalf("%d seedboxes gardées, attendu %d", len(c.SSHSaved), MaxSSHSaved)
+	}
+	c.ForgetSSH(c.SSHSaved[0])
+	if len(c.SSHSaved) != MaxSSHSaved-1 {
+		t.Fatal("ForgetSSH n'a pas retiré la seedbox")
+	}
+}
