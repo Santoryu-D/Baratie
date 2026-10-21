@@ -7,7 +7,9 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -110,5 +112,28 @@ func TestVerifyRelease(t *testing.T) {
 	// Signature fausse : refusée.
 	if err := VerifyRelease(pub, "0.9.1", sums, rel, make([]byte, 64)); err != ErrSignature {
 		t.Fatalf("signature : %v", err)
+	}
+}
+
+// Pas de mise à jour prête : Swap ne touche à rien et le dit (au lieu d'un
+// « mise à jour impossible : <nil> » muet, retour de Nayr 21/10/26), avec le
+// même chemin que celui où Stage l'aurait posée.
+func TestSwapWithoutStaged(t *testing.T) {
+	p, err := StagedPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p); err == nil {
+		t.Skip("une mise à jour traîne à côté du binaire de test")
+	}
+	if Staged() {
+		t.Fatal("Staged sans fichier")
+	}
+	swapped, err := Swap()
+	if swapped || !errors.Is(err, ErrNoStaged) {
+		t.Fatalf("Swap = %v, %v ; attendu false, ErrNoStaged", swapped, err)
+	}
+	if !strings.Contains(err.Error(), p) {
+		t.Fatalf("le chemin cherché manque dans l'erreur : %v", err)
 	}
 }

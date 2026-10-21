@@ -114,12 +114,25 @@ func Excluded(name string, patterns []string) bool {
 		return true
 	}
 	low := strings.ToLower(name)
+	if systemDirs[low] {
+		return true
+	}
 	for _, pat := range patterns {
 		if ok, _ := filepath.Match(strings.ToLower(pat), low); ok {
 			return true
 		}
 	}
 	return false
+}
+
+// systemDirs : dossiers du système ou du NAS, jamais une release, souvent
+// illisibles (corbeille Windows à la racine d'un disque : « open
+// D:\$RECYCLE.BIN\S-1-5-18: Access is denied », Maxxi37 21/10/26). Écartés
+// d'office, même si la liste d'exclusions des Réglages a été modifiée.
+var systemDirs = map[string]bool{
+	"$recycle.bin": true, "recycler": true, "system volume information": true,
+	"$windows.~bt": true, "$windows.~ws": true, "$sysreset": true,
+	"lost+found": true, "@eadir": true, "#recycle": true, "#snapshot": true, "@recycle": true,
 }
 
 // walk parcourt un dossier en suivant les liens symboliques : un lien compte

@@ -117,7 +117,7 @@ func run(port int, window bool) error {
 	// Une mise à jour vérifiée attend depuis la dernière fois : on l'installe et
 	// on relance la nouvelle version avant toute chose.
 	if takeover == "" {
-		if swapped, err := update.Swap(); err != nil {
+		if swapped, err := update.Swap(); err != nil && !errors.Is(err, update.ErrNoStaged) {
 			log.Println("mise à jour non installée :", err)
 		} else if swapped {
 			log.Println("mise à jour installée, relance")
@@ -256,10 +256,14 @@ func run(port int, window bool) error {
 	// Mise à jour demandée par la page : nouveau binaire, relance sur la même
 	// session, arrêt de celui-ci.
 	go func() {
-		<-srv.RestartRequested()
-		if swapped, err := update.Swap(); err != nil || !swapped {
-			log.Println("mise à jour impossible :", err)
-			return
+		for {
+			<-srv.RestartRequested()
+			if _, err := update.Swap(); err != nil {
+				log.Println("mise à jour impossible :", err)
+				srv.RestartFailed(err)
+				continue
+			}
+			break
 		}
 		_ = httpSrv.Close() // libère le port pour la nouvelle version
 		if err := relaunch(strconv.Itoa(port) + ":" + token); err != nil {
@@ -370,10 +374,14 @@ func serve(addr string) error {
 	// adresse et même jeton, la page se reconnecte.
 	restarted := make(chan struct{})
 	go func() {
-		<-srv.RestartRequested()
-		if swapped, err := update.Swap(); err != nil || !swapped {
-			log.Println("mise à jour impossible :", err)
-			return
+		for {
+			<-srv.RestartRequested()
+			if _, err := update.Swap(); err != nil {
+				log.Println("mise à jour impossible :", err)
+				srv.RestartFailed(err)
+				continue
+			}
+			break
 		}
 		_ = httpSrv.Close()
 		if err := relaunch(""); err != nil {

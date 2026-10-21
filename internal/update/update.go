@@ -223,29 +223,64 @@ func Stage(ctx context.Context, pub ed25519.PublicKey, r *Release) (string, erro
 	if hex.EncodeToString(got[:]) != want {
 		return "", errors.New("empreinte du fichier téléchargé différente de la liste signée : ignoré")
 	}
-	exe, err := os.Executable()
+	staged, err := StagedPath()
 	if err != nil {
 		return "", err
 	}
-	staged := exe + ".new"
 	if err := os.WriteFile(staged, bin, 0o755); err != nil {
 		return "", fmt.Errorf("impossible d'écrire la mise à jour à côté de D3X : %w", err)
 	}
 	return staged, nil
 }
 
+// ErrNoStaged : aucune mise à jour prête à côté du binaire.
+var ErrNoStaged = errors.New("aucune mise à jour prête à côté de D3X")
+
+// exePath : le binaire de D3X, liens symboliques résolus. Le même chemin pour
+// préparer, installer et nettoyer une mise à jour (Stage et Swap ne le
+// calculaient pas pareil : avec un lien dans le chemin, la mise à jour prête
+// restait introuvable au moment de l'installer, retour de Nayr 21/10/26).
+func exePath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real
+	}
+	return exe, nil
+}
+
+// StagedPath : où la mise à jour vérifiée attend d'être installée.
+func StagedPath() (string, error) {
+	exe, err := exePath()
+	if err != nil {
+		return "", err
+	}
+	return exe + ".new", nil
+}
+
+// Staged : une mise à jour vérifiée attend-elle d'être installée ?
+func Staged() bool {
+	p, err := StagedPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(p)
+	return err == nil
+}
+
 // Swap remplace le binaire par la version préparée. Sous Windows, le binaire
 // en cours ne peut pas être écrasé mais peut être renommé : il devient
 // « .old » et sera effacé au lancement suivant.
 func Swap() (bool, error) {
-	exe, err := os.Executable()
+	exe, err := exePath()
 	if err != nil {
 		return false, err
 	}
-	exe, _ = filepath.EvalSymlinks(exe)
 	staged := exe + ".new"
 	if _, err := os.Stat(staged); err != nil {
-		return false, nil
+		return false, fmt.Errorf("%w (%s)", ErrNoStaged, staged)
 	}
 	old := exe + ".old"
 	_ = os.Remove(old)
@@ -261,7 +296,7 @@ func Swap() (bool, error) {
 
 // Cleanup efface l'ancien binaire laissé par une mise à jour.
 func Cleanup() {
-	if exe, err := os.Executable(); err == nil {
+	if exe, err := exePath(); err == nil {
 		_ = os.Remove(exe + ".old")
 	}
 }

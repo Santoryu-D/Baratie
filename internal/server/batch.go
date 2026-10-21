@@ -74,7 +74,7 @@ func (s *Server) batchDecision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch in.Kind {
-	case "batch_review", "batch_simulated", "batch_ignored", "batch_unignored", "batch_duplicate", "batch_error":
+	case "batch_review", "batch_simulated", "batch_ignored", "batch_unignored", "batch_duplicate", "batch_error", "batch_reset":
 	default:
 		fail(w, http.StatusBadRequest, errors.New("décision inconnue"))
 		return

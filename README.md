@@ -98,6 +98,7 @@ Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et
 - **La fiche est celle du site** : nom suggéré, catégorie, TMDB, NFO et présentation viennent du même générateur que la page d'upload de V3X. Éditeur avec barre d'outils et aperçu en direct.
 - **Présentation en HTML** pour les membres que V3X y autorise (même règle que le site) : choix BBCode ou HTML au-dessus de l'éditeur, retenu sur l'appareil, et aperçu tel que le site l'affichera.
 - **Rapport VirusTotal** demandé pour les catégories où V3X l'exige (applications, jeux), compté dans « Il manque » tant qu'il n'est pas rempli.
+- **Image du PC** : un bouton de la barre d'outils envoie une image de ton ordinateur (pochette, capture), hébergée sur V3X avec ta clé, et l'insère dans la présentation.
 - **Seed automatique**, même quand ton client tourne sur un NAS ou dans Docker : D3X devine où le client voit tes fichiers, d'après les torrents qu'il seede déjà.
 - Fichiers cachés et aperçus de médiathèque écartés (`.DS_Store`, `*.trickplay`, `extrafanart`…), liens symboliques suivis sans boucle, fichier encore en cours d'écriture détecté.
 
@@ -133,7 +134,7 @@ Seedbox sous Linux x86_64 ou arm64.
 
 Chaque sous-dossier ou fichier d'un dossier est une release. D3X la publie seule **seulement** si l'œuvre TMDB est trouvée avec certitude (même titre, même année à un an près, bon type), que la catégorie est connue, que le MediaInfo est lu et que V3X n'annonce aucun refus. Jamais pour un exécutable, une collection sans fichier à sa racine ou une release au-delà du plafond de taille. Le reste part « à revoir », avec la raison, et s'ouvre dans Publier d'un clic.
 
-Simulation par défaut, plafond de publications, pause entre deux publications, arrêt propre. Les décisions sont gardées : un lot interrompu reprend où il en était, ce qui est publié n'est plus proposé.
+Simulation par défaut, plafond de publications, pause entre deux publications, arrêt propre. Les décisions sont gardées : un lot interrompu reprend où il en était, ce qui est publié n'est plus proposé. Pour recommencer avec d'autres options, « Tout remettre en attente » vide l'onglet ouvert (À revoir, Simulé, Ignoré, Erreur) sans rien publier ni effacer.
 
 ![Un lot en simulation : les releases mises de côté, chacune avec sa raison](docs/images/lot.png)
 

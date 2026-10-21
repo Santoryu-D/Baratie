@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -23,6 +24,7 @@ func (s *Server) routesPublish() {
 	s.mux.HandleFunc("GET /ui/pub/context", s.pubContext)
 	s.mux.HandleFunc("GET /ui/pub/tmdb/{kind}", s.pubTMDB)
 	s.mux.HandleFunc("POST /ui/pub/preview", s.pubPreview)
+	s.mux.HandleFunc("POST /ui/pub/image", s.pubImage)
 	s.mux.HandleFunc("GET /ui/bbcode.css", s.pubCSS)
 	s.mux.HandleFunc("GET /ui/pub/{id}", s.pubGet)
 	s.mux.HandleFunc("POST /ui/pub/{id}/cancel", s.pubCancel)
@@ -239,6 +241,49 @@ func (s *Server) pubPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"html": html})
+}
+
+// pubImage héberge sur V3X une image choisie dans la page (pochette, capture),
+// avec la clé du membre. Arrive en JSON (base64) : le serveur local n'accepte
+// que du JSON en écriture, ce qui le protège des formulaires d'autres sites.
+func (s *Server) pubImage(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+		Data string `json:"data"`
+	}
+	if !decode(w, r, 24<<20, &in) {
+		return
+	}
+	raw, err := base64.StdEncoding.DecodeString(in.Data)
+	if err != nil || len(raw) == 0 {
+		fail(w, http.StatusBadRequest, errors.New("image illisible"))
+		return
+	}
+	if len(raw) > 16<<20 {
+		fail(w, http.StatusRequestEntityTooLarge, errors.New("image trop lourde pour V3X (16 Mio au plus)"))
+		return
+	}
+	if !strings.HasPrefix(http.DetectContentType(raw), "image/") {
+		fail(w, http.StatusBadRequest, errors.New("ce fichier n'est pas une image (JPEG, PNG, GIF ou WebP)"))
+		return
+	}
+	name := filepath.Base(strings.TrimSpace(in.Name))
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = "image"
+	}
+	v, err := s.v3xClient()
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	u, err := v.UploadImage(ctx, name, raw)
+	if err != nil {
+		fail(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": u})
 }
 
 // pubCSS relaie la feuille de style du rendu BBCode du site (gardée 1 h).

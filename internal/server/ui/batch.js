@@ -189,7 +189,32 @@ function lotRender() {
   const checkable = list.filter((e) => e.state !== "published" && e.state !== "duplicate" && e.state !== "error");
   $("#b-all").checked = checkable.length > 0 && checkable.every((e) => e.checked);
   $("#b-all").disabled = lot.running || checkable.length === 0;
+  const resettable = lotResettable();
+  $("#b-reset-line").classList.toggle("hidden", lot.running || resettable.length === 0);
+  $("#b-reset").textContent = "Tout remettre en attente (" + resettable.length + ")";
   lotBar();
+}
+
+// Onglet ouvert (À revoir, Simulé, Ignoré, Erreur) : ses releases repartent
+// « En attente », pour relancer le lot avec d'autres options (Turias, 21/10/26 :
+// « Vidéos et albums seulement » laissé coché, aucun moyen de recommencer).
+// Une release illisible le reste : son erreur vient de la lecture du dossier.
+function lotResettable() {
+  if (!["review", "simulated", "ignored", "error"].includes(lot.tab)) return [];
+  return lot.entries.filter((e) => e.state === lot.tab && !e.error);
+}
+
+async function lotReset() {
+  const list = lotResettable();
+  for (const e of list) {
+    e.state = "pending";
+    e.detail = "";
+    e.checked = true;
+    try { await api("/ui/batch/decision", { path: e.path, source: lot.source, name: e.name, kind: "batch_reset", detail: "" }); } catch (err) { /* rien */ }
+  }
+  lot.tab = "pending";
+  lotRender();
+  toast(list.length + " " + plural(list.length, "release remise", "releases remises") + " en attente.", "ok");
 }
 
 function lotRow(e) {
@@ -496,7 +521,31 @@ window.batchShow = async (on) => {
   if (!$("#b-path").value && !lot.picked) {
     try { const s = await api("/ui/state"); $("#b-path").value = s.lastDir || ""; } catch (e) { /* rien */ }
   }
+  lotRefresh();
 };
+
+// Retour sur le Lot : états relus dans le journal. Une release ouverte par
+// « Revoir » et publiée dans Publier restait « À revoir » (Ekhstaz, 21/10/26).
+// Les cases cochées et l'onglet ouvert sont gardés.
+async function lotRefresh() {
+  if (lot.running || !lot.entries.length || (!lot.picked && !lot.dir)) return;
+  const before = new Map(lot.entries.map((e) => [e.path, e]));
+  const hits = {};
+  for (const e of lot.entries) if (e.requests) hits[e.path] = e.requests;
+  try {
+    const r = lot.picked
+      ? await api("/ui/batch/entries", { paths: lot.entries.map((e) => e.path), source: lot.source })
+      : await api("/ui/batch/list?source=" + lot.source + "&path=" + encodeURIComponent(lot.dir));
+    if (lot.running) return;
+    lot.entries = lotEntries(r.entries, hits).map((e) => {
+      const old = before.get(e.path);
+      return old && old.state === e.state ? { ...e, checked: old.checked } : e;
+    });
+    lotRender();
+  } catch (e) {
+    /* liste gardée telle quelle */
+  }
+}
 
 function bindBatch() {
   $("#b-list").addEventListener("click", lotList);
@@ -505,6 +554,7 @@ function bindBatch() {
   $("#b-run").addEventListener("click", lotRun);
   $("#b-stop").addEventListener("click", () => { lot.stop = true; toast("Le lot s'arrête après la release en cours."); });
   $("#b-sim").addEventListener("change", lotBar);
+  $("#b-reset").addEventListener("click", lotReset);
   $("#b-all").addEventListener("change", (ev) => {
     for (const e of lot.entries) if (e.state === lot.tab && e.state !== "published" && e.state !== "duplicate" && e.state !== "error") e.checked = ev.target.checked;
     lotRender();

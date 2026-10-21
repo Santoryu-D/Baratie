@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"sort"
 )
@@ -153,4 +155,51 @@ func (c *Client) OwnTorrent(ctx context.Context, id string) ([]byte, error) {
 		}
 		return req, err
 	})
+}
+
+// UploadImage héberge une image sur V3X (i.v3x.club), comme le bouton Image de
+// la page d'upload du site, avec la clé API (droit « Upload ») ; rend son
+// adresse. Demandé par CoprinusComatus (21/10/26) : la pochette d'un album
+// (cover.jpg) quand MusicBrainz n'en propose pas.
+func (c *Client) UploadImage(ctx context.Context, name string, data []byte) (string, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, name))
+	// Le site exige un type image/… : celui que les octets annoncent.
+	h.Set("Content-Type", http.DetectContentType(data))
+	fw, _ := w.CreatePart(h)
+	fw.Write(data)
+	w.Close()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, c.Base+"/images/upload", bytes.NewReader(buf.Bytes()))
+	req.Header.Set("Authorization", "Bearer "+c.Key)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("User-Agent", c.ua)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", unreachable(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var out struct {
+		URL   string `json:"url"`
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(body, &out)
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		return "", errors.New("V3X refuse : ta clé API doit avoir le droit « Upload » (sur V3X : Paramètres ▸ Intégrations)")
+	case out.Error == "too_large" || resp.StatusCode == http.StatusRequestEntityTooLarge:
+		return "", errors.New("image trop lourde pour V3X (16 Mio au plus)")
+	case out.Error == "invalid_image":
+		return "", errors.New("V3X ne reconnaît pas ce fichier comme une image")
+	case out.Error == "daily_image_quota":
+		return "", errors.New("trop d'images envoyées aujourd'hui avec cette clé : réessaie demain")
+	case resp.StatusCode >= 300 || out.URL == "":
+		if out.Error == "" {
+			out.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return "", fmt.Errorf("V3X n'a pas hébergé l'image (%s)", out.Error)
+	}
+	return out.URL, nil
 }

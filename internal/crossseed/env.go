@@ -90,7 +90,7 @@ func Reason(err error) string {
 	case errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err):
 		return "pas de réponse"
 	case errors.As(err, &op) && op.Op == "dial":
-		return "connexion impossible (client arrêté, machine éteinte ou mauvaise adresse)"
+		return "connexion impossible : rien ne répond à cette adresse (client arrêté, interface web désactivée ou mal réglée, machine éteinte, mauvaise adresse ou mauvais port)"
 	}
 	return err.Error()
 }

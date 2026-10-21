@@ -86,8 +86,9 @@ type Server struct {
 	sv    survey              // surveillance du client
 
 	pubKey      ed25519.PublicKey // clé qui signe les versions de D3X
+	restartMu   sync.Mutex
 	restart     chan struct{}
-	restartOnce sync.Once
+	restartOnce *sync.Once
 
 	pubCtx   []byte // contexte de publication du membre (gardé 5 min)
 	pubCtxAt time.Time
@@ -122,7 +123,7 @@ func New(version string, cfg *config.Config, token string, port int) *Server {
 
 // NewWith prépare le serveur avec des options.
 func NewWith(version string, cfg *config.Config, token string, port int, opts Options) *Server {
-	s := &Server{Version: version, Token: token, Port: port, opts: opts, cfg: cfg, mux: http.NewServeMux(), restart: make(chan struct{})}
+	s := &Server{Version: version, Token: token, Port: port, opts: opts, cfg: cfg, mux: http.NewServeMux(), restart: make(chan struct{}), restartOnce: &sync.Once{}}
 	s.engine = crossseed.New(s.env)
 	s.engine.SetRefresh(s.retryClients)
 	s.mb = musicbrainz.New(version)

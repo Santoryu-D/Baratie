@@ -684,6 +684,22 @@ function buildToolbar() {
     b.addEventListener("click", () => wrap(open, close, block));
     bar.append(b);
   }
+  // Image du PC (pochette cover.jpg, capture) : hébergée sur V3X avec la clé
+  // du membre, insérée en [img] (CoprinusComatus, 21/10/26).
+  const up = el("button", "tool", "Image du PC");
+  up.type = "button";
+  up.title = "Envoyer une image de ton PC (hébergée sur V3X) et l'insérer";
+  const file = el("input");
+  file.type = "file";
+  file.accept = "image/png,image/jpeg,image/gif,image/webp";
+  file.hidden = true;
+  up.addEventListener("click", () => file.click());
+  file.addEventListener("change", () => {
+    const f = file.files && file.files[0];
+    file.value = "";
+    if (f) sendImage(f, up);
+  });
+  bar.append(up, file);
   const size = el("select", "tool");
   size.setAttribute("aria-label", "Taille du texte");
   size.append(new Option("Taille", ""));
@@ -698,6 +714,27 @@ function buildToolbar() {
   color.title = "Couleur";
   color.addEventListener("change", () => wrap("[color=" + color.value + "]", "[/color]"));
   bar.append(size, color);
+}
+
+async function sendImage(f, btn) {
+  if (f.size > 16 * 1024 * 1024) return toast("Image trop lourde pour V3X (16 Mio au plus).", "bad");
+  btn.disabled = true;
+  toast("Envoi de l'image sur V3X…");
+  try {
+    const data = await new Promise((ok, ko) => {
+      const rd = new FileReader();
+      rd.onload = () => ok(String(rd.result).split(",")[1] || "");
+      rd.onerror = () => ko(new Error("image illisible"));
+      rd.readAsDataURL(f);
+    });
+    const r = await api("/ui/pub/image", { name: f.name, data });
+    wrap("[img]" + r.url + "[/img]", "");
+    toast("Image ajoutée à la présentation.", "ok");
+  } catch (e) {
+    if (e.message !== "session") toast(e.message, "bad");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 let prevTimer = null;

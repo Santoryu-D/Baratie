@@ -339,6 +339,12 @@ async function installUpdate() {
       await new Promise((r) => setTimeout(r, 1000));
       try {
         const s = await api("/ui/state");
+        // Installation ratée (main l'a dit au serveur) : la raison, sans
+        // attendre une minute un redémarrage qui ne viendra pas.
+        if (s.version === (ui.state && ui.state.version) && s.update && !s.update.ready && s.update.error) {
+          toast(s.update.error, "bad");
+          return;
+        }
         if (s.version === want || s.version !== (ui.state && ui.state.version)) {
           // Page entière rechargée : sinon l'ancienne interface restait
           // affichée face à la nouvelle version, avec son bandeau périmé

@@ -135,7 +135,7 @@ func New(o Options) (*Client, error) {
 }
 
 // ErrAuth signale des identifiants refusés.
-var ErrAuth = errors.New("qBittorrent a répondu « Fails. » : utilisateur ou mot de passe de l'interface web refusé (après plusieurs échecs, qBittorrent bloque l'adresse quelques minutes)")
+var ErrAuth = errors.New("qBittorrent a répondu « Fails. » : utilisateur ou mot de passe de l'interface web refusé (après plusieurs échecs, qBittorrent bloque l'adresse quelques minutes). S'il faut le ressaisir après chaque redémarrage de qBittorrent, c'est son mot de passe temporaire (image Docker) : fixe-en un dans Outils ▸ Options ▸ Interface Web")
 
 func (c *Client) login(ctx context.Context) error {
 	form := url.Values{"username": {c.user}, "password": {c.pass}}

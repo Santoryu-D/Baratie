@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/V3x0rV3x/D3X/internal/update"
@@ -188,10 +189,12 @@ func (s *Server) stageRelease(ctx context.Context, pub ed25519.PublicKey, rel *u
 		return
 	}
 	done := &Update{Version: u.Version, URL: u.URL, Managed: u.Managed}
-	if _, err := update.Stage(ctx, pub, rel); err != nil {
+	if p, err := update.Stage(ctx, pub, rel); err != nil {
 		done.Error = err.Error()
+		log.Printf("mise à jour %s non préparée : %v", rel.Version, err)
 	} else {
 		done.Ready = true
+		log.Printf("mise à jour %s prête : %s", rel.Version, p)
 	}
 	s.mu.Lock()
 	s.update = done
@@ -239,7 +242,38 @@ func (s *Server) checkNow(w http.ResponseWriter, r *http.Request) {
 
 // Restart est fermé quand la page demande d'installer la mise à jour : main
 // remplace le binaire, relance D3X sur la même session et s'arrête.
-func (s *Server) RestartRequested() <-chan struct{} { return s.restart }
+func (s *Server) RestartRequested() <-chan struct{} {
+	s.restartMu.Lock()
+	defer s.restartMu.Unlock()
+	return s.restart
+}
+
+// RestartFailed : main n'a pas pu installer la mise à jour. Le bouton refait
+// une demande (avant, un premier échec le rendait muet), la page montre la
+// raison et la version est retéléchargée en arrière-plan.
+func (s *Server) RestartFailed(err error) {
+	s.restartMu.Lock()
+	s.restart, s.restartOnce = make(chan struct{}), &sync.Once{}
+	s.restartMu.Unlock()
+	s.restage("installation impossible : " + err.Error())
+}
+
+// restage : la version prête n'est plus utilisable (fichier disparu, échec de
+// l'installation) ; on la retélécharge, la page dit pourquoi en attendant.
+func (s *Server) restage(why string) {
+	s.mu.Lock()
+	if s.update != nil {
+		u := *s.update
+		u.Ready, u.Error = false, why
+		s.update = &u
+	}
+	pub := s.pubKey
+	s.mu.Unlock()
+	if s.Version == "dev" || s.Version == "" {
+		return // version de développement : jamais de téléchargement
+	}
+	go s.checkUpdate(pub)
+}
 
 func (s *Server) restartNow(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
@@ -253,6 +287,16 @@ func (s *Server) restartNow(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, errors.New("D3X travaille (ajouts, vérification ou publication) : réessaie quand c'est fini"))
 		return
 	}
+	if !update.Staged() {
+		p, _ := update.StagedPath()
+		log.Printf("mise à jour %s introuvable à côté de D3X (%s) : nouveau téléchargement", u.Version, p)
+		s.restage("le fichier de la mise à jour a disparu, nouveau téléchargement en cours")
+		fail(w, http.StatusConflict, errors.New("le fichier de la mise à jour a disparu : D3X la retélécharge, réessaie dans une minute"))
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	s.restartOnce.Do(func() { close(s.restart) })
+	s.restartMu.Lock()
+	once, ch := s.restartOnce, s.restart
+	s.restartMu.Unlock()
+	once.Do(func() { close(ch) })
 }
