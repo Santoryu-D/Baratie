@@ -303,8 +303,12 @@ func dialV3X(ctx context.Context, cfg config.Config, version string) (v *v3x.Cli
 	return v, m, "", false
 }
 
-// v3xRetryEvery : délai entre deux nouvelles tentatives de connexion à V3X.
-var v3xRetryEvery = 30 * time.Second
+// v3xRetryEvery : délai entre deux nouvelles tentatives de connexion à V3X,
+// en nanosecondes. Atomique : un test le raccourcit pendant que les boucles
+// d'autres serveurs le lisent.
+var v3xRetryEvery atomic.Int64
+
+func init() { v3xRetryEvery.Store(int64(30 * time.Second)) }
 
 // v3xRetryLoop : une connexion à V3X ratée sur le réseau (pas encore prêt au
 // démarrage de la machine ou après une mise à jour, site un instant
@@ -312,7 +316,7 @@ var v3xRetryEvery = 30 * time.Second
 // prochain enregistrement des Réglages (MasterMan, 22/10/26).
 func (s *Server) v3xRetryLoop() {
 	for {
-		time.Sleep(v3xRetryEvery)
+		time.Sleep(time.Duration(v3xRetryEvery.Load()))
 		s.mu.Lock()
 		cfg, retry := *s.cfg, s.v3xRetry && s.me == nil
 		s.mu.Unlock()

@@ -14,9 +14,9 @@ import (
 // Une connexion à V3X ratée sur une panne passagère est retentée seule
 // (MasterMan, 22/10/26) ; une clé refusée ne l'est pas.
 func TestV3XRetry(t *testing.T) {
-	old := v3xRetryEvery
-	v3xRetryEvery = 30 * time.Millisecond
-	defer func() { v3xRetryEvery = old }()
+	old := v3xRetryEvery.Load()
+	v3xRetryEvery.Store(int64(30 * time.Millisecond))
+	defer v3xRetryEvery.Store(old)
 
 	for _, tc := range []struct {
 		name      string
