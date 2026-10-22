@@ -2,7 +2,7 @@
 
 // Vue « Lot ». Mène les releases d'un dossier une par une, avec les mêmes
 // routes que la vue Publier (liste, hachage, MediaInfo, fiche, publication).
-// Ne publie seule une release que si tout est sûr ; le reste est « à revoir ».
+// Ne publie seule une release que si tout est sûr ; le reste est « à vérifier ».
 
 const lot = {
   dir: "",
@@ -21,10 +21,12 @@ const lot = {
 const LOT_TABS = [
   ["pending", "En attente", "Pas encore traitées par un lot."],
   ["ready", "Prête", "Corrigée dans Publier et gardée : le lot la publiera avec ta fiche, telle quelle. « Revoir » pour la modifier."],
-  ["review", "À revoir", "Le lot n'a pas osé : la raison est sur la ligne. « Revoir » l'ouvre dans Publier."],
+  // « À vérifier » plutôt que « À revoir » (AntoineAngel, 22/10/26) ; le bouton
+  // « Revoir » de chaque ligne garde son nom : il ouvre la release dans Publier.
+  ["review", "À vérifier", "Le lot n'a pas osé : la raison est sur la ligne. « Revoir » l'ouvre dans Publier."],
   ["simulated", "Simulé", "Le lot l'aurait publiée. Décoche Simulation pour le faire pour de vrai."],
   ["published", "Publié", "Publiée sur V3X et mise en seed."],
-  ["duplicate", "Déjà présent", "Déjà sur V3X : rien à publier, seede-la depuis Cross-seed."],
+  ["duplicate", "Déjà présent", "Déjà sur V3X : rien à publier. « Revoir » la met en seed avec tes fichiers (ou la Médiathèque, s'ils portent d'autres noms)."],
   ["ignored", "Ignoré", "Écartée à la main : les lots la sautent."],
   ["error", "Erreur", "Illisible ou refusée par V3X."],
 ];
@@ -615,7 +617,7 @@ async function lotRun() {
   lot.tab = opts.sim ? "simulated" : counts.published ? "published" : "review";
   lotRender();
   const started = hold && lot.published ? " Leurs seeds démarrent maintenant." : "";
-  toast((lot.stop ? "Lot arrêté." : "Lot terminé : " + (opts.sim ? (counts.simulated || 0) + " seraient publiées" : lot.published + " publiées") + ", " + (counts.review || 0) + " à revoir.") + started, "ok");
+  toast((lot.stop ? "Lot arrêté." : "Lot terminé : " + (opts.sim ? (counts.simulated || 0) + " seraient publiées" : lot.published + " publiées") + ", " + (counts.review || 0) + " à vérifier.") + started, "ok");
 }
 
 async function lotLoop(todo, opts) {

@@ -123,7 +123,7 @@ Un dossier d'album (une ou plusieurs pistes, plusieurs disques compris) est reco
 - **La fiche album du site** (jaquette, tracklist, label), dans Audio ▸ Musique.
 - **Le nom** : V3X exige la qualité dans le nom d'un album (`FLAC 24bit-96kHz`, `MP3 320`). D3X la lit dans les fichiers et propose de l'ajouter d'un clic.
 
-Le lot ne publie seul un album que si l'édition est certaine (tags, ou mêmes pistes aux mêmes durées, d'une seule œuvre) et que toutes les pistes ont la même qualité. Un nom sans la qualité part « à revoir » avec le nom corrigé, ou est complété si l'option du lot est cochée.
+Le lot ne publie seul un album que si l'édition est certaine (tags, ou mêmes pistes aux mêmes durées, d'une seule œuvre) et que toutes les pistes ont la même qualité. Un nom sans la qualité part « à vérifier » avec le nom corrigé, ou est complété si l'option du lot est cochée.
 
 ## Depuis une seedbox (SSH)
 
@@ -140,11 +140,11 @@ Seedbox sous Linux x86_64 ou arm64.
 
 ## Le lot
 
-Chaque sous-dossier ou fichier d'un dossier est une release. D3X la publie seule **seulement** si l'œuvre TMDB est trouvée avec certitude (même titre, même année à un an près, bon type), que la catégorie est connue, que le MediaInfo est lu et que V3X n'annonce aucun refus. Jamais pour un exécutable, une collection sans fichier à sa racine ou une release au-delà du plafond de taille. Le reste part « à revoir », avec la raison, et s'ouvre dans Publier d'un clic.
+Chaque sous-dossier ou fichier d'un dossier est une release. D3X la publie seule **seulement** si l'œuvre TMDB est trouvée avec certitude (même titre, même année à un an près, bon type), que la catégorie est connue, que le MediaInfo est lu et que V3X n'annonce aucun refus. Jamais pour un exécutable, une collection sans fichier à sa racine ou une release au-delà du plafond de taille. Le reste part « à vérifier », avec la raison, et s'ouvre dans Publier d'un clic.
 
-Simulation par défaut, plafond de publications (en nombre, ou en Gio publiés pour suivre le rythme de ton envoi), pause entre deux publications, arrêt propre. Disque lent ? L'option « Attendre la vérification du client » fait vérifier chaque release publiée par ton client avant de passer à la suivante, au lieu d'empiler les vérifications, et « Démarrer le seed à la fin du lot » garde les releases publiées à l'arrêt pendant que le lot hache les suivantes, puis les démarre toutes à la fin. Les décisions sont gardées : un lot interrompu reprend où il en était, ce qui est publié n'est plus proposé. Pour recommencer avec d'autres options, « Tout remettre en attente » vide l'onglet ouvert (À revoir, Simulé, Ignoré, Erreur) sans rien publier ni effacer.
+Simulation par défaut, plafond de publications (en nombre, ou en Gio publiés pour suivre le rythme de ton envoi), pause entre deux publications, arrêt propre. Disque lent ? L'option « Attendre la vérification du client » fait vérifier chaque release publiée par ton client avant de passer à la suivante, au lieu d'empiler les vérifications, et « Démarrer le seed à la fin du lot » garde les releases publiées à l'arrêt pendant que le lot hache les suivantes, puis les démarre toutes à la fin. Les décisions sont gardées : un lot interrompu reprend où il en était, ce qui est publié n'est plus proposé. Pour recommencer avec d'autres options, « Tout remettre en attente » vide l'onglet ouvert (À vérifier, Simulé, Ignoré, Erreur) sans rien publier ni effacer.
 
-Une release « à revoir » s'ouvre dans Publier avec **Revoir** : corrige la fiche, puis publie-la tout de suite, ou **Garder pour le lot**. Elle passe alors dans l'onglet **Prête**, et le prochain lot la publie avec ta fiche, telle quelle, sans rien redécider.
+Une release « à vérifier » s'ouvre dans Publier avec **Revoir** : corrige la fiche, puis publie-la tout de suite, ou **Garder pour le lot**. Elle passe alors dans l'onglet **Prête**, et le prochain lot la publie avec ta fiche, telle quelle, sans rien redécider.
 
 ![Un lot en simulation : les releases mises de côté, chacune avec sa raison](docs/images/lot.png)
 
