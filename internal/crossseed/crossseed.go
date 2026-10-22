@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/V3x0rV3x/D3X/internal/client"
 	"github.com/V3x0rV3x/D3X/internal/config"
@@ -624,6 +625,32 @@ const sameVideoMin = 200 << 20
 // Baldur's Gate 3), et une image disque (.iso) peut aussi être un jeu.
 var sameVideoExt = map[string]bool{".mkv": true, ".mp4": true, ".avi": true, ".m2ts": true, ".ts": true, ".mov": true, ".wmv": true, ".webm": true, ".mpg": true, ".mpeg": true, ".m4v": true, ".vob": true}
 
+// sameFileExt : une image disque passe en « Même fichier sur V3X » seulement
+// si, en plus de la taille à l'octet près, la fiche V3X porte le même nom de
+// release (Nayr, 22/10/26 : Ori.and.the.Will.of.the.Wisps-Mephisto, un .nfo
+// différent à côté de l'.iso). Deux jeux différents n'ont pas le même nom.
+var sameFileExt = map[string]bool{".iso": true}
+
+// sameReleaseName : même nom de release, aux séparateurs, à la casse et à
+// l'extension près (« Ori.and.the.Will-Mephisto » = « Ori and the Will-Mephisto.iso »).
+func sameReleaseName(a, b string) bool {
+	norm := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if e := path.Ext(s); sameFileExt[e] || sameVideoExt[e] {
+			s = strings.TrimSuffix(s, e)
+		}
+		var sb strings.Builder
+		for _, c := range s {
+			if unicode.IsLetter(c) || unicode.IsDigit(c) {
+				sb.WriteRune(c)
+			}
+		}
+		return sb.String()
+	}
+	na := norm(a)
+	return na != "" && na == norm(b)
+}
+
 // markSameVideo : une release absente du catalogue sous cette forme peut y
 // être sous une autre (nom refait, .nfo en plus, dossier au lieu d'un fichier
 // seul ; Motives chez Luci, 21/10/26). L'empreinte de la release entière ne
@@ -658,7 +685,7 @@ func (e *Engine) markSameVideo(ctx context.Context, v *v3x.Client, retry *v3x.Re
 	bySize := map[int64][]*Row{}
 	var sizes []int64
 	for _, r := range rows {
-		if r.sig.Big < sameVideoMin || !sameVideoExt[r.sig.BigExt] {
+		if r.sig.Big < sameVideoMin || !(sameVideoExt[r.sig.BigExt] || sameFileExt[r.sig.BigExt]) {
 			continue
 		}
 		if bySize[r.sig.Big] == nil {
@@ -675,28 +702,46 @@ func (e *Engine) markSameVideo(ctx context.Context, v *v3x.Client, retry *v3x.Re
 			if len(list) == 0 {
 				continue
 			}
-			// La fiche déjà dans un client d'abord, sinon la plus seedée.
-			best, inClient := list[0], false
-			for _, m := range list {
-				if known[strings.ToLower(m.InfoHash)] {
-					best, inClient = m, true
-					break
-				}
-				if m.Seeders > best.Seeders {
-					best = m
-				}
-			}
 			for _, r := range bySize[size] {
-				r.Match = &v3x.Match{Kind: "same_video", ID: best.ID, Name: best.Name, InfoHash: best.InfoHash, Seeders: best.Seeders, Leechers: best.Leechers, Size: best.Size}
+				// Image disque : seulement une fiche au même nom de release.
+				file := sameFileExt[r.sig.BigExt]
+				best, inClient, ok := bestFileMatch(list, known, func(m v3x.FileMatch) bool {
+					return !file || sameReleaseName(m.Name, r.Name)
+				})
+				if !ok {
+					continue
+				}
+				kind, what := "same_video", "la même vidéo"
+				if file {
+					kind, what = "same_file", "le même fichier "+r.sig.BigExt
+				}
+				r.Match = &v3x.Match{Kind: kind, ID: best.ID, Name: best.Name, InfoHash: best.InfoHash, Seeders: best.Seeders, Leechers: best.Leechers, Size: best.Size}
 				if inClient {
-					r.Status, r.Detail = StInClient, "la même vidéo est déjà dans ton client avec la fiche V3X « "+best.Name+" »"
+					r.Status, r.Detail = StInClient, what+" est déjà dans ton client avec la fiche V3X « "+best.Name+" »"
 				} else {
-					r.Status, r.Detail = StSameVideo, "la même vidéo est sur V3X dans « "+best.Name+" », sous un autre nom ou avec d'autres fichiers à côté"
+					r.Status, r.Detail = StSameVideo, what+" est sur V3X dans « "+best.Name+" », sous un autre nom ou avec d'autres fichiers à côté"
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// bestFileMatch : parmi les fiches V3X retenues par keep, celle déjà dans un
+// client d'abord, sinon la plus seedée.
+func bestFileMatch(list []v3x.FileMatch, known map[string]bool, keep func(v3x.FileMatch) bool) (best v3x.FileMatch, inClient, ok bool) {
+	for _, m := range list {
+		if !keep(m) {
+			continue
+		}
+		if known[strings.ToLower(m.InfoHash)] {
+			return m, true, true
+		}
+		if !ok || m.Seeders > best.Seeders {
+			best, ok = m, true
+		}
+	}
+	return best, false, ok
 }
 
 func loadSigCache() map[string]Sig {

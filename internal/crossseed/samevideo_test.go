@@ -92,6 +92,90 @@ func TestSameVideo(t *testing.T) {
 	}
 }
 
+// Image disque d'un jeu (Nayr, 22/10/26 : Ori.and.the.Will.of.the.Wisps-Mephisto
+// affiché « Pas sur V3X », un .nfo différent à côté de l'.iso) : « Même fichier
+// sur V3X » seulement si la fiche porte le même nom de release ; un autre jeu
+// de la même taille reste « Pas sur V3X ».
+func TestSameFileISO(t *testing.T) {
+	for _, tc := range []struct {
+		name, v3xName, want string
+	}{
+		{"même nom", "Ori.and.the.Will.of.the.Wisps-Mephisto", StSameVideo},
+		{"autre jeu", "Un.Autre.Jeu-GRP", StNone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolatedConfig(t)
+			const iso = int64(400_000_000)
+			raw := mkTorrent("Ori.and.the.Will.of.the.Wisps-Mephisto", map[string]int64{
+				"Ori.and.the.Will.of.the.Wisps-Mephisto/Ori.and.the.Will.of.the.Wisps-Mephisto.iso": iso,
+				"Ori.and.the.Will.of.the.Wisps-Mephisto/mephisto.nfo":                               5_000,
+			}, "https://autre.invalid/announce", "AUTRE")
+			p, _ := torrent.Parse(raw)
+			fq := &fakeQbit{list: map[string]*fakeTorrent{}, complete: map[string]float64{}}
+			h := strings.ToLower(p.InfoHash)
+			fq.list[h] = &fakeTorrent{Torrent: qbit.Torrent{
+				Hash: h, Name: p.Name, SavePath: "/data", ContentPath: "/data/" + p.Name, Progress: 1, State: "stalledUP",
+				Size: p.Total, TotalSize: p.Total, MagnetURI: "magnet:?xt=urn:btih:" + h + "&tr=https%3A%2F%2Fautre.invalid%2Fannounce",
+			}, raw: raw}
+			qs := httptest.NewServer(fq.handler(t))
+			defer qs.Close()
+			vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/me":
+					io.WriteString(w, `{"username":"test","ratio":2.5,"hitAndRun":0}`)
+				case "/api/d3x/match":
+					io.WriteString(w, `{"results":[]}`)
+				case "/api/d3x/match-files":
+					json.NewEncoder(w).Encode(map[string]interface{}{"matches": map[string][]v3x.FileMatch{
+						"400000000": {{ID: "66666666-6666-4666-8666-666666666666", Name: tc.v3xName, InfoHash: strings.Repeat("cd", 20), Size: iso + 8_774, FileCount: 2, Seeders: 4}},
+					}})
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer vs.Close()
+			q, _ := client.New(client.Options{URL: qs.URL, User: "admin", Pass: "secret"})
+			e := New(oneClient(q, v3x.New(vs.URL, "cle", "D3X/test"), config.Defaults()))
+			if err := e.StartScan(); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, func() bool { return !e.Scanning() })
+			for _, r := range e.Rows() {
+				if r.Name != p.Name {
+					continue
+				}
+				if r.Status != tc.want {
+					t.Fatalf("%s : %s (%s), attendu %s", tc.name, r.Status, r.Detail, tc.want)
+				}
+				if tc.want == StSameVideo && (r.Match == nil || r.Match.Kind != "same_file" || !strings.Contains(r.Detail, ".iso")) {
+					t.Fatalf("correspondance : %+v (%s)", r.Match, r.Detail)
+				}
+				if tc.want == StNone && r.Match != nil {
+					t.Fatalf("autre jeu rattaché : %+v", r.Match)
+				}
+				return
+			}
+			t.Fatalf("ligne absente : %+v", e.Rows())
+		})
+	}
+}
+
+func TestSameReleaseName(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want bool
+	}{
+		{"Ori.and.the.Will.of.the.Wisps-Mephisto", "Ori and the Will of the Wisps-Mephisto", true},
+		{"Ori.and.the.Will.of.the.Wisps-Mephisto.iso", "ori.and.the.will.of.the.wisps-mephisto", true},
+		{"Ori.and.the.Will.of.the.Wisps-Mephisto", "Ori.and.the.Blind.Forest-Mephisto", false},
+		{"...", "---", false},
+	} {
+		if got := sameReleaseName(tc.a, tc.b); got != tc.want {
+			t.Errorf("%q / %q : %v, attendu %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
 // Un installeur de jeu découpé en morceaux de taille fixe (Nayr, 22/10/26 :
 // un Terminator pris pour Baldur's Gate 3) : son plus gros fichier n'est pas une
 // vidéo, sa taille ne part pas au site et la ligne reste « Pas sur V3X ».

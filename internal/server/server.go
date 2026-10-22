@@ -202,7 +202,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/ui/") {
 		if !s.sessionOK(r) {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "session"})
+			// remote : mode serveur (Docker, NAS), la page dit où trouver le
+			// lien d'accès au lieu de « relance D3X » (sultar, 22/10/26).
+			writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "session", "remote": s.opts.Remote})
 			return
 		}
 		// Première venue de la page : notée dans le journal, pour distinguer une

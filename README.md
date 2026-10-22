@@ -35,7 +35,7 @@ L'analyse range tes releases en onglets :
 - **Noms différents** : les mêmes fichiers sous d'autres noms (voir les [questions](#questions)).
 - **Pas sur V3X** : ce que tu seedes ailleurs et qui manque à V3X. « Publier » ouvre la fiche d'une release, ou coches-en plusieurs pour les passer au crible du lot. Celles qui répondent à une **demande ouverte** sur le site sont en tête, avec la prime ; une fois ta release publiée et validée, D3X la propose au demandeur d'un clic. Une release seedée plusieurs fois (un torrent par tracker, sur des liens physiques) n'y apparaît qu'une fois, avec son nombre de copies (×2, ×3…). Celles d'une team qui interdit le réupload, ou le soumet à son accord, portent une pastille qui le dit, et une case les masque.
 - **Autres** :
-  - **Même vidéo sur V3X** : le plus gros fichier de ta copie, une vidéo de 200 Mio ou plus, existe à l'octet près dans une fiche V3X, sous une autre forme (nom refait, .nfo en plus, dossier au lieu d'un fichier seul). Rien ne manque au site, rien à publier.
+  - **Même vidéo sur V3X** : le plus gros fichier de ta copie, une vidéo de 200 Mio ou plus, existe à l'octet près dans une fiche V3X, sous une autre forme (nom refait, .nfo en plus, dossier au lieu d'un fichier seul). Rien ne manque au site, rien à publier. Pour une image disque (`.iso`, souvent un jeu), la taille ne suffit pas : il faut aussi le même nom de release, et la ligne devient **Même fichier sur V3X**.
   - **Absente du disque** : le client croit la copie complète, mais ses fichiers ne sont plus là (supprimés, ou déplacés par un outil de médiathèque). D3X ne l'ajoute pas.
   - **Retirée de V3X** : aucune fiche en ligne, mais V3X a retiré (ou remplacé, archivé) une fiche de ce contenu. D3X ne la propose pas à la publication ; le motif s'affiche si c'était ta fiche. Publier reste possible si la raison ne s'applique plus.
 
@@ -189,8 +189,8 @@ volumes:
   d3x:
 ```
 
-1. `docker compose up -d`, puis `docker compose logs d3x` : le journal donne le lien d'accès, `http://ADRESSE-DE-CETTE-MACHINE:8733/auth?t=…`. Le jeton est gardé dans `/config` (ou choisi avec `D3X_TOKEN`) ; le navigateur s'en souvient 400 jours.
-2. Dans Réglages, l'adresse du client torrent est celle de son conteneur (`http://qbittorrent:8080`) ou de la machine, jamais `127.0.0.1`.
+1. `docker compose up -d`, puis `docker compose logs d3x` : le journal donne le lien d'accès, `http://ADRESSE-DE-CETTE-MACHINE:8733/auth?t=…`. **Ouvre D3X par ce lien** : l'adresse seule (`IP:8733`) ne suffit pas, la page le rappelle. Le jeton est gardé dans `/config` (ou choisi avec `D3X_TOKEN`) ; le navigateur s'en souvient 400 jours.
+2. Dans Réglages, l'adresse du client torrent est celle de son conteneur (`http://qbittorrent:8080`) ou de la machine, jamais `127.0.0.1`. Si le client est dans le même fichier compose, ajoute `depends_on: [qbittorrent]` au service `d3x` pour qu'il démarre après lui.
 3. Tes médias sont montés en lecture seule : D3X n'écrit jamais dedans. S'il n'a pas le droit de les lire, lance-le avec l'utilisateur qui les possède (`user: "1000:1000"`, voir `id -u` et `id -g`).
 4. Mise à jour : `docker compose pull && docker compose up -d`. D3X signale les nouvelles versions mais ne se remplace pas lui-même dans un conteneur.
 

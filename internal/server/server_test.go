@@ -52,8 +52,10 @@ func TestServerMode(t *testing.T) {
 	if got := do(s, "GET", "nas.local:8733", "/health", nil).Code; got != http.StatusOK {
 		t.Fatalf("hôte du réseau refusé : %d", got)
 	}
-	if got := do(s, "GET", "nas.local:8733", "/ui/state", nil).Code; got != http.StatusUnauthorized {
-		t.Fatalf("page sans cookie : %d", got)
+	// Sans cookie : refusé, et la page sait qu'elle est en mode serveur pour
+	// dire où trouver le lien d'accès (sultar, 22/10/26).
+	if w := do(s, "GET", "nas.local:8733", "/ui/state", nil); w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), `"remote":true`) {
+		t.Fatalf("page sans cookie : %d %s", w.Code, w.Body.String())
 	}
 	if got := do(s, "GET", "nas.local:8733", "/auth?t=faux", nil).Code; got != http.StatusForbidden {
 		t.Fatalf("mauvais jeton : %d", got)

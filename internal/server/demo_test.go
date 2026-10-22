@@ -496,7 +496,12 @@ func TestDemo(t *testing.T) {
 	if version == "" {
 		version = "1.0.0"
 	}
-	srv := New(version, cfg, "demo", 8799)
+	// D3X_DEMO_REMOTE=1 : mode serveur (Docker), pour voir la page d'un NAS.
+	opts := Options{}
+	if os.Getenv("D3X_DEMO_REMOTE") != "" {
+		opts = Options{Remote: true, Managed: "docker"}
+	}
+	srv := NewWith(version, cfg, "demo", 8799, opts)
 	demoAssets(srv.mux)
 	go http.Serve(ln, srv)
 	t.Logf("démo : http://127.0.0.1:8799/auth?t=demo (%d s)", secs)

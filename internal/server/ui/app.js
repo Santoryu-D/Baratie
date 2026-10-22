@@ -88,6 +88,9 @@ async function api(path, body) {
   // Seul le refus de session de D3X lui-même ouvre ce bandeau ; un autre 401
   // est une erreur comme les autres.
   if (r.status === 401 && data.error === "session") {
+    // Mode serveur (Docker, NAS) : pas de fenêtre à relancer, la page s'ouvre
+    // avec le lien d'accès écrit dans le journal (sultar, 22/10/26).
+    if (data.remote) $("#session").textContent = "Ouvre D3X avec son lien d'accès, qui finit par /auth?t=… : il est écrit dans le journal de D3X à son démarrage. Avec l'image Docker : docker compose logs d3x. Le lien reste le même d'un redémarrage à l'autre.";
     $("#session").classList.remove("hidden");
     throw new Error("session");
   }
@@ -1356,7 +1359,11 @@ function rowEl(r) {
 
   const tdE = el("td");
   const box = el("div", "state");
-  const [label, kind] = r.status === "renamed" && r.canAdd ? ["À ajouter sous tes noms", "add"] : STATUS[r.status] || [r.status, ""];
+  const [label, kind] = r.status === "renamed" && r.canAdd
+    ? ["À ajouter sous tes noms", "add"]
+    : r.status === "same_video" && r.match && r.match.kind === "same_file"
+      ? ["Même fichier sur V3X", ""] // image disque d'un jeu, même nom de release (1.1.25)
+      : STATUS[r.status] || [r.status, ""];
   box.append(el("span", "pill " + kind, label));
   if (r.status === "checking" && r.progress > 0) {
     const bar = el("div", "mini");
