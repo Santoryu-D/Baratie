@@ -98,7 +98,7 @@ Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et
 
 ## Publier, en mieux
 
-- **Doublon repéré avant de hacher** : l'empreinte des noms et tailles suffit pour savoir si la release existe déjà sur V3X, sans passer dix minutes à hacher 50 Gio pour rien.
+- **Doublon repéré avant de hacher** : l'empreinte des noms et tailles suffit pour savoir si la release existe déjà sur V3X, sans passer dix minutes à hacher 50 Gio pour rien. Si elle y est à l'identique, « Seeder la release V3X avec ces fichiers » l'ajoute à ton client à l'arrêt, la fait vérifier et la démarre à 100 %, sans rien publier.
 - **Hachage sur tous les cœurs**, mémoire bornée, et un cache : une release déjà hachée ne l'est plus jamais.
 - **MediaInfo sans rien installer** : la même bibliothèque que la page d'upload du site, calculée dans la page de D3X.
 - **La fiche est celle du site** : nom suggéré, catégorie, TMDB, NFO et présentation viennent du même générateur que la page d'upload de V3X. Éditeur avec barre d'outils et aperçu en direct.

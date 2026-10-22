@@ -391,7 +391,7 @@ async function pollJob() {
   }
   renderJob();
   const j = pub.job;
-  const seedBusy = j.published && (!j.seed || j.seed.status === "checking") && !j.seedError;
+  const seedBusy = (j.published || (j.seedOnly && j.state === "done" && !j.seedNote)) && (!j.seed || j.seed.status === "checking") && !j.seedError;
   if (j.state === "hashing" || j.state === "publishing" || j.state === "seeding" || seedBusy) {
     pub.timer = setTimeout(pollJob, 700);
   }
@@ -428,8 +428,32 @@ function renderJob() {
     a.href = "https://v3x.club/torrents/" + m.id;
     a.target = "_blank";
     a.rel = "noopener";
-    dup.append(a, document.createTextNode(". Pas besoin de la publier : seede-la depuis l'onglet Cross-seed."));
-    dup.classList.add("bad");
+    // Identique : D3X la met en seed avec ces fichiers (Turias, 22/10/26 :
+    // Cross-seed ne voit que ce qui est déjà dans le client). Mêmes fichiers
+    // sous d'autres noms : la Médiathèque sait les rapprocher.
+    const same = m.kind === "exact" || m.kind === "self";
+    if (j.seedOnly) {
+      dup.append(a, document.createTextNode(". " + seedText(j, "la release V3X")));
+    } else if (same && j.client) {
+      dup.append(a, document.createTextNode(". Pas besoin de la publier : seede-la avec ces fichiers. "));
+      const go = el("button", "btn small", "Seeder la release V3X avec ces fichiers");
+      go.type = "button";
+      go.addEventListener("click", async () => {
+        go.disabled = true;
+        try {
+          pub.job = await api("/ui/pub/" + j.id + "/seed-existing", {});
+          renderJob();
+          pollJob();
+        } catch (e) {
+          go.disabled = false;
+          if (e.message !== "session") toast(e.message, "bad");
+        }
+      });
+      dup.append(go);
+    } else {
+      dup.append(a, document.createTextNode(same ? ". Pas besoin de la publier : ajoute un client torrent dans Réglages pour la seeder avec ces fichiers." : ". Pas besoin de la publier : la Médiathèque retrouve ces fichiers et les met en seed sous le nom de la fiche V3X."));
+    }
+    dup.classList.toggle("bad", !j.seedOnly);
     dup.classList.remove("hidden");
   } else if (j.gone) {
     // Fiche retirée du même contenu (issue GitHub #1) : republier reste
@@ -441,7 +465,8 @@ function renderJob() {
     dup.classList.add("hidden");
   }
 
-  if (j.state === "error") setStep("#st-hash", "bad", j.error);
+  if (j.seedOnly) setStep("#st-hash", "ok", "Rien à fabriquer : c'est le .torrent de la fiche V3X qui part dans ton client.");
+  else if (j.state === "error") setStep("#st-hash", "bad", j.error);
   else if (j.state === "hashing") {
     setStep("#st-hash", "run", "Hachage : " + fmtSize(j.hashed) + " sur " + fmtSize(j.total));
   } else setStep("#st-hash", "ok", j.fromCache ? "Repris du cache : ces fichiers ont déjà été hachés." : "Prêt.");
@@ -1025,8 +1050,9 @@ function missing() {
 function renderBar() {
   const bar = $("#pub-bar");
   const j = pub.job;
-  const show = pub.shown && j && !j.published;
+  const show = pub.shown && j && !j.published && !j.seedOnly;
   bar.classList.toggle("hidden", !show);
+  if (j && j.seedOnly) $("#pub-form").classList.add("hidden"); // rien à publier : la release V3X part en seed
   $("#vt-field").classList.toggle("hidden", !needsVirusTotal() && !$("#f-vt").value.trim());
   if (!show) return;
   const miss = missing();
@@ -1149,6 +1175,17 @@ function showPubError(msg) {
   n.textContent = "V3X a refusé la publication : " + msg + ".";
   n.classList.remove("hidden");
   n.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+// État du seed d'une release déjà sur V3X, mise en seed avec ces fichiers
+// (SeedExisting) : mêmes étapes qu'après une publication.
+function seedText(j, what) {
+  if (j.seedError) return "Seed : " + j.seedError + ".";
+  if (j.seedNote) return "Seed : " + j.seedNote + ".";
+  if (j.state === "seeding") return "Seed : ajout de " + what + " à ton client…";
+  if (!j.seed || (j.seed.status === "checking" && !j.seed.detail)) return "Seed : ton client vérifie les fichiers" + (j.seed && j.seed.progress ? " (" + Math.round(j.seed.progress * 100) + " %)" : "") + "…";
+  if (j.seed.status === "seeding") return "Seed : vérifié à 100 %, " + what + " est en seed.";
+  return "Seed : " + (j.seed.detail || j.seed.status);
 }
 
 function renderDone() {

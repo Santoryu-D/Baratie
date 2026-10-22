@@ -77,6 +77,10 @@ type Job struct {
 	Published  *v3x.Uploaded         `json:"published,omitempty"`
 	Seed       *crossseed.WatchState `json:"seed,omitempty"`
 	SeedError  string                `json:"seedError,omitempty"`
+	// SeedOnly : rien n'est publié, la release déjà sur V3X à l'identique est
+	// mise en seed avec ces fichiers (SeedExisting).
+	SeedOnly bool   `json:"seedOnly,omitempty"`
+	SeedNote string `json:"seedNote,omitempty"` // « déjà dans ton client »
 
 	// Source des fichiers (ce PC ou la seedbox) et son nom pour la page.
 	Source string `json:"source"`
@@ -225,7 +229,7 @@ func (m *Manager) Get(id string) (*Job, bool) {
 	}
 	c := *j
 	m.mu.Unlock()
-	if c.Published != nil && c.InfoHash != "" {
+	if (c.Published != nil || c.SeedOnly) && c.InfoHash != "" {
 		if st, ok := m.engine.WatchOf(c.InfoHash); ok {
 			c.Seed = &st
 		}
@@ -495,6 +499,81 @@ func (m *Manager) Publish(id string, fields map[string]string) error {
 		m.mu.Unlock()
 	}()
 	return nil
+}
+
+// SeedExisting : la release est déjà sur V3X à l'identique (Turias, 22/10/26 :
+// Publier renvoyait vers Cross-seed, qui ne voit que ce qui est déjà dans le
+// client). Rien n'est publié : D3X ajoute le .torrent de la fiche V3X, à
+// l'arrêt, sur ces mêmes fichiers, le fait vérifier et le démarre à 100 %,
+// comme après une publication.
+func (m *Manager) SeedExisting(id string) error {
+	m.mu.Lock()
+	j := m.jobs[id]
+	if j == nil {
+		m.mu.Unlock()
+		return errors.New("publication inconnue")
+	}
+	d := j.Duplicate
+	if d == nil || (d.Kind != "exact" && d.Kind != "self") {
+		m.mu.Unlock()
+		return errors.New("seulement pour une release identique à celle de V3X")
+	}
+	if j.State == StPublishing || j.State == StSeeding || j.State == StDone {
+		m.mu.Unlock()
+		return errors.New("cette release est déjà en route")
+	}
+	j.State, j.SeedOnly, j.SeedError, j.Error = StSeeding, true, "", ""
+	j.InfoHash = strings.ToLower(d.InfoHash)
+	if j.cancel != nil {
+		j.cancel() // le hachage ne sert plus : le .torrent vient de V3X
+	}
+	clientID, clientDir, contentHash := j.Client, j.ClientDir, j.plan.ContentHash
+	m.mu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		seedErr := ""
+		note, err := m.seedExisting(ctx, id, d, clientID, clientDir, contentHash)
+		if err != nil {
+			seedErr = err.Error()
+		}
+		m.mu.Lock()
+		j.State, j.SeedError, j.SeedNote = StDone, seedErr, note
+		m.mu.Unlock()
+	}()
+	return nil
+}
+
+// seedExisting rend une note quand il n'y a rien à suivre (déjà dans le client).
+func (m *Manager) seedExisting(ctx context.Context, id string, d *v3x.Match, clientID, clientDir, contentHash string) (string, error) {
+	env, err := m.clients()
+	if err != nil {
+		return "", err
+	}
+	raw, err := env.V3X.DownloadTorrent(ctx, &v3x.Retry{}, d.ID)
+	if err != nil {
+		return "", err
+	}
+	t, err := torrent.Parse(raw)
+	if err != nil {
+		return "", errors.New("le .torrent reçu de V3X est illisible")
+	}
+	// Ceinture : le site a dit « identique », on le constate soi-même.
+	if t.ContentHash != contentHash {
+		return "", errors.New("les fichiers de la fiche V3X ne sont pas exactement les tiens : la Médiathèque sait les rapprocher")
+	}
+	tg := env.Get(clientID)
+	if tg == nil {
+		return "", env.Unreachable(clientID)
+	}
+	if _, err := m.engine.AddAndVerify(ctx, *tg, env.Cfg, "pub:"+id, d.ID, raw, clientDir); err != nil {
+		if errors.Is(err, crossseed.ErrInClient) {
+			return "elle est déjà dans ton client", nil
+		}
+		return "", err
+	}
+	return "", nil
 }
 
 func statusLabel(s string) string {

@@ -34,6 +34,18 @@ func (s *Server) routesPublish() {
 	s.mux.HandleFunc("POST /ui/pub/{id}/clientdir", s.pubClientDir)
 	s.mux.HandleFunc("POST /ui/pub/{id}/client", s.pubClient)
 	s.mux.HandleFunc("POST /ui/pub/{id}/publish", s.pubPublish)
+	s.mux.HandleFunc("POST /ui/pub/{id}/seed-existing", s.pubSeedExisting)
+}
+
+// pubSeedExisting : release déjà sur V3X à l'identique, mise en seed avec ces
+// fichiers au lieu d'être publiée (publish.SeedExisting).
+func (s *Server) pubSeedExisting(w http.ResponseWriter, r *http.Request) {
+	if err := s.pub.SeedExisting(r.PathValue("id")); err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	j, _ := s.pub.Get(r.PathValue("id"))
+	writeJSON(w, http.StatusOK, j)
 }
 
 func decode(w http.ResponseWriter, r *http.Request, max int64, v interface{}) bool {

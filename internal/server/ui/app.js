@@ -1518,7 +1518,19 @@ async function loadHistory() {
 
 // ---------- vues et boucle ----------
 
-function setView(v) {
+// Historique du navigateur (sultar, 22/10/26) : chaque vue a son adresse
+// (#lot, #publier…). Le retour arrière revient à la vue d'avant au lieu de
+// quitter D3X, et un rechargement de la page reste sur la même vue.
+const VIEW_HASH = { cross: "cross-seed", seed: "mon-seed", library: "mediatheque", publish: "publier", batch: "lot", history: "historique" };
+
+function viewFromHash() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  return Object.keys(VIEW_HASH).find((v) => VIEW_HASH[v] === h) || null;
+}
+
+function setView(v, fromHistory) {
+  if (!VIEW_HASH[v]) v = "cross";
+  if (!fromHistory && viewFromHash() !== v) history.pushState(null, "", "#" + VIEW_HASH[v]);
   ui.view = v;
   for (const b of document.querySelectorAll(".view")) {
     if (b.dataset.view === v) b.setAttribute("aria-current", "page");
@@ -1589,6 +1601,7 @@ async function boot() {
   presence();
   for (const b of document.querySelectorAll("[data-open-settings]")) b.addEventListener("click", openSettings);
   for (const b of document.querySelectorAll(".view")) b.addEventListener("click", () => setView(b.dataset.view));
+  window.addEventListener("popstate", () => setView(viewFromHash() || "cross", true));
   $("#settings-form").addEventListener("submit", saveSettings);
   bindSSH();
   $("#detect").addEventListener("click", detectClients);
@@ -1660,6 +1673,11 @@ async function boot() {
   try {
     const s = await api("/ui/state");
     renderState(s);
+    // Vue de l'adresse (rechargement, lien gardé) ; sinon la première vue
+    // prend son adresse, sans entrée de plus dans l'historique.
+    const start = viewFromHash();
+    if (start && start !== ui.view) setView(start, true);
+    else if (!start) history.replaceState(null, "", "#" + (VIEW_HASH[ui.view] || VIEW_HASH.cross));
     try {
       const v = sessionStorage.getItem("d3x-updated");
       if (v) {

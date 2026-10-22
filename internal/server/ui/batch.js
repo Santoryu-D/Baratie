@@ -262,10 +262,12 @@ function lotRow(e) {
   tr.append(st);
   const act = el("td");
   const box = el("div", "b-actions");
-  if (e.state === "review" || e.state === "simulated" || e.state === "pending" || e.state === "ready") {
+  // Déjà sur V3X : « Revoir » ouvre Publier, qui la met en seed avec ces
+  // fichiers (Turias, 22/10/26).
+  if (e.state === "review" || e.state === "simulated" || e.state === "pending" || e.state === "ready" || e.state === "duplicate") {
     const r = el("button", "btn small", "Revoir");
     r.type = "button";
-    r.title = "Ouvrir dans Publier pour finir la fiche à la main, puis la publier ou la garder pour le lot";
+    r.title = e.state === "duplicate" ? "Ouvrir dans Publier pour la seeder avec ces fichiers" : "Ouvrir dans Publier pour finir la fiche à la main, puis la publier ou la garder pour le lot";
     r.disabled = lot.running;
     r.addEventListener("click", () => { setView("publish"); choose(e.path, lot.source, { fromLot: true }); });
     box.append(r);
@@ -287,8 +289,15 @@ function lotBar() {
   const show = $("#view-batch") && !$("#view-batch").classList.contains("hidden") && lot.entries.length > 0;
   bar.classList.toggle("hidden", !show);
   if (!show) return;
-  const n = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "ready" || e.state === "review" || e.state === "simulated")).length;
-  $("#b-bar-txt").textContent = lot.running ? "Lot en cours : " + lot.done + " / " + lot.total : n + (n > 1 ? " releases cochées" : " release cochée");
+  const checked = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "ready" || e.state === "review" || e.state === "simulated"));
+  const n = checked.length;
+  // Les cases restent cochées d'un onglet à l'autre et le lot les prend
+  // toutes : on dit combien sont dans l'onglet ouvert, et « Tout décocher »
+  // évite de repasser par chaque onglet (sultar, 22/10/26).
+  const here = checked.filter((e) => e.state === lot.tab).length;
+  const elsewhere = n > 0 && here < n ? ", dont " + (here ? here : "aucune") + " dans cet onglet" : "";
+  $("#b-bar-txt").textContent = lot.running ? "Lot en cours : " + lot.done + " / " + lot.total : n + (n > 1 ? " releases cochées" : " release cochée") + elsewhere;
+  $("#b-uncheck").classList.toggle("hidden", lot.running || n === 0);
   $("#b-bar-how").textContent = $("#b-sim").checked ? "Simulation : rien ne sera publié, tu verras ce que le lot ferait." : "Pour de vrai : les releases sûres seront publiées et mises en seed.";
   $("#b-run").classList.toggle("hidden", lot.running);
   $("#b-run").disabled = n === 0;
@@ -302,6 +311,12 @@ function lotProgress(label, detail) {
   $("#b-progress-label").textContent = label || "";
   $("#b-progress-detail").textContent = detail || "";
   $("#b-progress-fill").style.width = (lot.total ? Math.max(3, (lot.done / lot.total) * 100) : 0) + "%";
+}
+
+// Déjà sur V3X : à l'identique, « Revoir » la met en seed avec ces fichiers ;
+// sous d'autres noms, la Médiathèque les rapproche.
+function dupText(d) {
+  return "déjà sur V3X : " + d.name + (d.kind === "exact" || d.kind === "self" ? " · « Revoir » pour la seeder avec ces fichiers" : " · la Médiathèque la met en seed avec ces fichiers");
 }
 
 async function decide(e, state, detail, id) {
@@ -361,7 +376,7 @@ async function processReady(e, opts) {
   const cancel = async () => { try { await api("/ui/pub/" + j.id + "/cancel", {}); } catch (err) { /* rien */ } };
   if (j.duplicate) {
     await cancel();
-    return decide(e, "duplicate", "déjà sur V3X : " + j.duplicate.name, j.duplicate.id);
+    return decide(e, "duplicate", dupText(j.duplicate), j.duplicate.id);
   }
   j = await waitJob(j.id, (x) => x.state !== "hashing");
   if (j.state !== "ready") {
@@ -384,7 +399,7 @@ async function processEntry(e, opts) {
   const cancel = async () => { try { await api("/ui/pub/" + j.id + "/cancel", {}); } catch (err) { /* rien */ } };
   if (j.duplicate) {
     await cancel();
-    return decide(e, "duplicate", "déjà sur V3X : " + j.duplicate.name, j.duplicate.id);
+    return decide(e, "duplicate", dupText(j.duplicate), j.duplicate.id);
   }
   if (j.gone) {
     await cancel();
@@ -680,6 +695,10 @@ function bindBatch() {
   $("#b-browse").addEventListener("click", () => lotBrowse($("#b-path").value));
   $("#b-run").addEventListener("click", lotRun);
   $("#b-stop").addEventListener("click", () => { lot.stop = true; toast("Le lot s'arrête après la release en cours."); });
+  $("#b-uncheck").addEventListener("click", () => {
+    for (const e of lot.entries) e.checked = false;
+    lotRender();
+  });
   $("#b-sim").addEventListener("change", lotBar);
   $("#b-waitcheck").checked = waitCheckSaved();
   $("#b-waitcheck").addEventListener("change", (ev) => {

@@ -54,6 +54,7 @@ func TestDemo(t *testing.T) {
 		seeders int
 		renamed bool
 		ok      float64
+		disk    bool // sur V3X et sur le disque, pas dans le client
 	}
 	var rels []rel
 	titles := []string{"Exemple", "Demonstration", "Echantillon", "Specimen", "Prototype", "Maquette", "Brouillon", "Essai", "Modele", "Esquisse", "Croquis", "Epreuve"}
@@ -79,6 +80,10 @@ func TestDemo(t *testing.T) {
 			rels = append(rels, r)
 		}
 	}
+	// Déjà sur V3X, posée sur le disque mais absente du client (Turias,
+	// 22/10/26) : Publier la met en seed avec ces fichiers.
+	dup := "Duplicata.2024.1080p.WEB.H264-DEMO"
+	rels = append(rels, rel{name: dup, files: map[string]int64{dup + ".mkv": 6_000_000, dup + ".nfo": 3_200}, seeders: 4, ok: 1, onV3X: true, disk: true})
 
 	mk := func(name string, files map[string]int64, src string) []byte {
 		const pl = int64(1 << 22)
@@ -117,7 +122,9 @@ func TestDemo(t *testing.T) {
 		local := mk(r.name, r.files, "AUTRE")
 		p, _ := torrent.Parse(local)
 		h := strings.ToLower(p.InfoHash)
-		client[h] = &entry{Torrent: qbit.Torrent{Hash: h, Name: r.name, SavePath: "/data/torrents", ContentPath: "/data/torrents/" + r.name, Progress: 1, State: "stalledUP", Size: p.Total, TotalSize: p.Total, MagnetURI: "magnet:?xt=urn:btih:" + h + "&tr=https%3A%2F%2Ftracker.invalid%2Fannounce"}, raw: local}
+		if !r.disk {
+			client[h] = &entry{Torrent: qbit.Torrent{Hash: h, Name: r.name, SavePath: "/data/torrents", ContentPath: "/data/torrents/" + r.name, Progress: 1, State: "stalledUP", Size: p.Total, TotalSize: p.Total, MagnetURI: "magnet:?xt=urn:btih:" + h + "&tr=https%3A%2F%2Ftracker.invalid%2Fannounce"}, raw: local}
+		}
 		if r.onV3X || r.renamed {
 			name := r.name
 			if r.renamed {
@@ -421,7 +428,7 @@ func TestDemo(t *testing.T) {
 	_ = os.RemoveAll(seed)
 	t.Cleanup(func() { _ = os.RemoveAll(seed) })
 	for _, r := range rels {
-		if !r.none {
+		if !r.none && !r.disk {
 			continue
 		}
 		dir := filepath.Join(seed, r.name)
