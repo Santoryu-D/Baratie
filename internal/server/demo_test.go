@@ -61,6 +61,9 @@ func TestDemo(t *testing.T) {
 	for i, ti := range titles {
 		for j, q := range []string{"1080p.WEB.H264", "2160p.WEB.H265", "720p.HDTV.x264"} {
 			n := fmt.Sprintf("%s.%d.%s-DEMO", ti, 2001+i, q)
+			if i == 1 && j == 1 {
+				n = strings.TrimSuffix(n, "-DEMO") + "-BANNI" // groupe refusé sur V3X (1.1.28)
+			}
 			size := int64(700_000_000 + (i*3+j)*413_000_017)
 			r := rel{name: n, files: map[string]int64{n + ".mkv": size, n + ".nfo": 3_200}, seeders: (i*7 + j*3) % 9, ok: 1}
 			switch (i*3 + j) % 6 {
@@ -385,6 +388,11 @@ func TestDemo(t *testing.T) {
 				}
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{"matches": out})
+		case "/api/d3x/team-policies":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"teams":      []interface{}{},
+				"bannedTags": []map[string]string{{"tag": "BANNI", "reason": "Reprend les releases d'autres groupes en retirant leur tag"}},
+			})
 		case "/api/d3x/seed-status":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"hnr":    map[string]interface{}{"enabled": true, "minSeedHours": 48, "windowDays": 14, "maxActive": 3, "active": 0, "items": hnr},

@@ -45,7 +45,7 @@ func dial(ctx context.Context, cc config.ClientConfig) *clientConn {
 	if err != nil {
 		k.err = crossseed.Reason(err)
 		if ctx.Err() != nil {
-			k.err = "pas de réponse"
+			k.err = crossseed.NoAnswer
 		}
 		return k
 	}

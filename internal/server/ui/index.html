@@ -442,6 +442,18 @@
   </form>
 </dialog>
 
+<dialog id="diag" aria-labelledby="diag-title">
+  <form method="dialog" class="confirm">
+    <h2 id="diag-title">Diagnostic de la release</h2>
+    <p class="hint">À coller dans ton message au staff, sur le forum ou par « Contacter le staff ». Ni info-hash ni chemin sur ton disque : rien ne dit d'où vient ta copie.</p>
+    <textarea id="diag-text" readonly rows="12" spellcheck="false"></textarea>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="diag-close">Fermer</button>
+      <button type="button" class="btn primary" id="diag-copy">Copier</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="settings" aria-labelledby="settings-title">
   <form id="settings-form" method="dialog">
     <h2 id="settings-title">Réglages</h2>

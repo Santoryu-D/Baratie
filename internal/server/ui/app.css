@@ -520,6 +520,7 @@ input.tool.color { width: 34px; height: 28px; padding: 2px; border-color: var(--
 .preview.html-prev iframe { display: block; width: 100%; height: 420px; border: 0; }
 details.nfo { margin-top: 14px; }
 details.nfo summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+#diag-text { width: 100%; min-width: min(560px, 80vw); margin: 4px 0 14px; font: 12px/1.45 var(--mono); padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--ground); color: var(--ink); resize: vertical; }
 details.nfo textarea { width: 100%; min-height: 260px; margin-top: 8px; font: 12px/1.4 var(--mono); padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--ground); color: var(--ink); }
 #pub-error { margin-top: 14px; }
 #pub-done h2 { margin-bottom: 6px; }

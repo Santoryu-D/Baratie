@@ -318,8 +318,9 @@ func (s *Server) teamPolicies(ctx context.Context, v *v3x.Client) ([]v3x.TeamPol
 }
 
 type policyHit struct {
-	Team   string `json:"team"`
-	Policy string `json:"policy"` // forbidden, ask
+	Team   string `json:"team"`             // la team, ou le tag refusé
+	Policy string `json:"policy"`           // forbidden, ask, banned
+	Reason string `json:"reason,omitempty"` // banned : la raison donnée par V3X
 }
 
 // teamPoliciesMatch : pour chaque release « Pas sur V3X », la team de son tag
@@ -339,7 +340,12 @@ func (s *Server) teamPoliciesMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	byTag := map[string]policyHit{}
+	var banned []v3x.TeamPolicy
 	for _, t := range list {
+		if t.Policy == "banned" {
+			banned = append(banned, t)
+			continue
+		}
 		if t.Allowed {
 			continue
 		}
@@ -350,6 +356,11 @@ func (s *Server) teamPoliciesMatch(w http.ResponseWriter, r *http.Request) {
 	out := map[string]policyHit{}
 	for _, row := range s.engine.Rows() {
 		if row.Status != crossseed.StNone {
+			continue
+		}
+		// Groupe refusé sur V3X (liste du staff, 22/10/26) : avant tout le reste.
+		if b := bannedTagOf(row.Name, banned); b != nil {
+			out[row.Key] = policyHit{Team: b.Name, Policy: "banned", Reason: b.Reason}
 			continue
 		}
 		if g := releaseGroup(row.Name); g != "" {
@@ -365,7 +376,34 @@ var (
 	trailingTitle = regexp.MustCompile(`\s*\([^()]*\)\s*$`)
 	groupToken    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_]{1,19}$`)
 	notAGroup     = regexp.MustCompile(`^(?i:\d+p?|raws|subs|dl|web|hdtv|x264|x265|h264|h265|hevc|avc|aac|ac3|dts|multi|french|vff|vfq|vostfr)$`)
+	fileExt       = regexp.MustCompile(`(?i)\.(mkv|mp4|avi|m2ts|ts|iso|epub|pdf|cbz|cbr|mp3|flac|zip|rar|7z|torrent)$`)
+	tagParts      = regexp.MustCompile(`[^A-Za-z0-9]+`)
 )
+
+// bannedTagOf : le tag refusé qui termine ce nom (« …x264-DreadTeam »,
+// « …-Dread-Team.mkv », « …[TOXIC] »), comme le site (lib/banned-tags.ts) :
+// après un tiret ou entre crochets, séparateurs internes du tag facultatifs.
+func bannedTagOf(name string, list []v3x.TeamPolicy) *v3x.TeamPolicy {
+	base := trailingTitle.ReplaceAllString(strings.TrimSpace(name), "")
+	base = fileExt.ReplaceAllString(base, "")
+	for i := range list {
+		parts := tagParts.Split(list[i].Name, -1)
+		var q []string
+		for _, p := range parts {
+			if p != "" {
+				q = append(q, regexp.QuoteMeta(p))
+			}
+		}
+		if len(q) == 0 {
+			continue
+		}
+		re, err := regexp.Compile(`(?i)(?:-\s*|\[)` + strings.Join(q, `[-._ ]?`) + `\]?$`)
+		if err == nil && re.MatchString(base) {
+			return &list[i]
+		}
+	}
+	return nil
+}
 
 // releaseGroup : le tag de groupe en fin de nom (« …x265-TEAM »), comme le site
 // (lib/release-quality.ts) ; vide s'il n'y en a pas.

@@ -82,13 +82,17 @@ func (env *Env) Unreachable(id string) error {
 	return errors.New("ce client torrent n'est plus dans les réglages")
 }
 
+// NoAnswer : le client n'a pas répondu à temps (calcifer, 22/10/26 : « pas de
+// réponse » seul ne disait pas quoi vérifier).
+const NoAnswer = "pas de réponse : rien ne répond à temps à cette adresse (pare-feu qui bloque le port, ou adresse injoignable depuis la machine où tourne D3X)"
+
 // Reason : pourquoi un client ne répond pas, en clair quand c'est la machine
 // ou le réseau (client arrêté, machine éteinte), sinon l'erreur du client.
 func Reason(err error) string {
 	var op *net.OpError
 	switch {
 	case errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err):
-		return "pas de réponse"
+		return NoAnswer
 	case errors.As(err, &op) && op.Op == "dial":
 		return "connexion impossible : rien ne répond à cette adresse (client arrêté, interface web désactivée ou mal réglée, machine éteinte, mauvaise adresse ou mauvais port)"
 	}

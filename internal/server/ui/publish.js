@@ -47,6 +47,7 @@ const ERRORS = {
   name_missing_gpu: "le nom doit indiquer l'encodeur matériel",
   exclusive_group_mismatch: "l'exclusivité est réservée aux releases de ta team",
   team_reupload_forbidden: "cette team refuse les réuploads de ses releases",
+  banned_tag: "le groupe de cette release est refusé sur V3X",
   team_reupload_ask: "cette team demande son accord avant un réupload",
   duplicate: "cette release est déjà sur V3X (même .torrent)",
   duplicate_removed: "cette release a déjà été publiée puis retirée",

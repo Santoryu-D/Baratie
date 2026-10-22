@@ -94,9 +94,11 @@ func (c *Client) Propose(ctx context.Context, requestID, torrentID string) error
 }
 
 // FileMatch : un torrent V3X qui contient un fichier de la taille cherchée.
+// File : le nom de ce fichier dans la fiche (sans dossier), quand V3X le donne.
 type FileMatch struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
+	File      string `json:"file,omitempty"`
 	InfoHash  string `json:"infoHash"`
 	Size      int64  `json:"size"`
 	FileCount int    `json:"fileCount"`
@@ -127,20 +129,34 @@ func (c *Client) MatchFiles(ctx context.Context, r *Retry, sizes []int64) (map[i
 
 // TeamPolicy : une team dont le réupload est interdit (« forbidden ») ou soumis
 // à son accord (« ask »). Allowed : le membre en fait partie ou a leur accord.
+// Policy « banned » : un tag de groupe refusé sur V3X (liste du staff), Name
+// est alors le tag et Reason la raison donnée par V3X.
 type TeamPolicy struct {
 	Name    string   `json:"name"`
 	Tags    []string `json:"tags"`
 	Policy  string   `json:"policy"`
 	Allowed bool     `json:"allowed"`
+	Reason  string   `json:"reason,omitempty"`
 }
 
-// TeamPolicies liste les teams dont le réupload n'est pas libre.
+// TeamPolicies liste les teams dont le réupload n'est pas libre, puis les tags
+// de groupes refusés sur V3X.
 func (c *Client) TeamPolicies(ctx context.Context) ([]TeamPolicy, error) {
 	var out struct {
-		Teams []TeamPolicy `json:"teams"`
+		Teams      []TeamPolicy `json:"teams"`
+		BannedTags []struct {
+			Tag    string `json:"tag"`
+			Reason string `json:"reason"`
+		} `json:"bannedTags"`
 	}
 	if err := c.doJSON(ctx, &Retry{}, http.MethodGet, "/api/d3x/team-policies", nil, &out); err != nil {
 		return nil, err
 	}
-	return out.Teams, nil
+	list := out.Teams
+	for _, b := range out.BannedTags {
+		if b.Tag != "" {
+			list = append(list, TeamPolicy{Name: b.Tag, Tags: []string{b.Tag}, Policy: "banned", Reason: b.Reason})
+		}
+	}
+	return list, nil
 }

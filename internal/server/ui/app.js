@@ -418,10 +418,21 @@ function editName(c) {
 
 // État d'un client : essai fait à l'instant, sinon dernier test enregistré.
 function editState(c) {
-  if (c.test) return c.test.ok ? ["ok", "Connecté à " + c.test.version] : ["bad", c.test.error];
+  if (c.test) return c.test.ok ? ["ok", "Connecté à " + c.test.version] : ["bad", c.test.error + testHint(c.test.error)];
   if (c.isNew) return ["", ""];
   if (c.pending) return ["", "Connexion en cours…"];
-  return c.ok ? ["ok", "Connecté à " + c.version] : ["bad", c.error || "injoignable"];
+  return c.ok ? ["ok", "Connecté à " + c.version] : ["bad", (c.error || "injoignable") + testHint(c.error)];
+}
+
+// Que vérifier quand le test échoue faute de réponse (calcifer, quebecman,
+// 22/10/26).
+function testHint(err) {
+  if (!/pas de réponse|connexion impossible/.test(err || "")) return "";
+  if (ui.state && ui.state.mode === "docker") {
+    return ". D3X tourne dans Docker : l'adresse doit être joignable depuis son conteneur (le nom du conteneur du client, ou l'adresse de la machine), jamais 127.0.0.1.";
+  }
+  return ". Ouvre cette adresse dans un navigateur sur la machine où tourne D3X : si l'interface du client ne s'affiche pas, le souci est entre les deux (adresse, port, pare-feu)." +
+    (ui.state && ui.state.mode ? "" : " Si le client tourne sur ce PC, « Détecter sur ce PC » trouve la bonne adresse.");
 }
 
 function input(id, value, placeholder, onInput, type) {
@@ -1221,14 +1232,15 @@ function renderRows() {
   }
   // Pas sur V3X : les releases d'une team qui interdit le réupload, masquées
   // sur demande ; puis celles qu'un membre demande d'abord, les mieux primées en tête.
-  const forbidden = tab.id === "none" ? list.filter((r) => ui.pols[r.key] && ui.pols[r.key].policy === "forbidden").length : 0;
+  const blocked = (r) => ui.pols[r.key] && (ui.pols[r.key].policy === "forbidden" || ui.pols[r.key].policy === "banned");
+  const forbidden = tab.id === "none" ? list.filter(blocked).length : 0;
   const filterBox = $("#none-filter");
   filterBox.classList.toggle("hidden", !forbidden);
   if (forbidden) {
     const cb = $("#f-hide-forbidden");
     cb.checked = hideForbidden();
-    filterBox.lastChild.textContent = " Masquer les " + forbidden + " " + plural(forbidden, "release d'une team qui interdit", "releases de teams qui interdisent") + " le réupload";
-    if (cb.checked) list = list.filter((r) => !(ui.pols[r.key] && ui.pols[r.key].policy === "forbidden"));
+    filterBox.lastChild.textContent = (forbidden === 1 ? " Masquer la release" : " Masquer les " + forbidden + " releases") + " que V3X refusera (team qui interdit le réupload, groupe refusé)";
+    if (cb.checked) list = list.filter((r) => !blocked(r));
   }
   if (tab.id === "none") {
     const best = (r) => Math.max(-1, ...(ui.reqs[r.key] || []).filter((h) => !h.mine).map((h) => h.reward || 0));
@@ -1333,11 +1345,14 @@ function rowEl(r) {
   }
   if (r.status === "none" && ui.pols[r.key]) {
     const p = ui.pols[r.key];
-    const forbid = p.policy === "forbidden";
-    const b = el("span", "pill " + (forbid ? "bad" : "warn"), (forbid ? "Réupload interdit" : "Réupload sur accord") + " · " + p.team);
-    b.title = forbid
-      ? "La team " + p.team + " n'autorise pas le réupload de ses releases : V3X refusera la publication."
-      : "La team " + p.team + " demande son accord avant un réupload : écris-lui sur V3X avant de publier.";
+    const banned = p.policy === "banned";
+    const forbid = banned || p.policy === "forbidden";
+    const b = el("span", "pill " + (forbid ? "bad" : "warn"), (banned ? "Groupe refusé sur V3X" : forbid ? "Réupload interdit" : "Réupload sur accord") + " · " + p.team);
+    b.title = banned
+      ? "Le groupe " + p.team + " est refusé sur V3X" + (p.reason ? " : " + p.reason : "") + ". V3X refusera la publication."
+      : forbid
+        ? "La team " + p.team + " n'autorise pas le réupload de ses releases : V3X refusera la publication."
+        : "La team " + p.team + " demande son accord avant un réupload : écris-lui sur V3X avant de publier.";
     const box = el("div", "reqs");
     box.append(b);
     tdN.append(box);
@@ -1392,6 +1407,13 @@ function rowEl(r) {
     b.addEventListener("click", () => toggleIgnored(r));
     box.append(b);
   }
+  if (DIAG_STATUSES.includes(r.status)) {
+    const b = el("button", "btn small", "Diagnostic");
+    b.type = "button";
+    b.title = "Copie ce que D3X sait de cette release (nom, fichiers et tailles, ce qu'il en a conclu), sans info-hash ni chemin : à coller pour le staff si le classement te paraît faux.";
+    b.addEventListener("click", () => copyDiag(r, b));
+    box.append(b);
+  }
   if (r.status === "failed") {
     const rb = el("button", "btn small", "Revérifier");
     rb.title = "Relance la vérification dans ton client : la release démarre si elle atteint 100 %.";
@@ -1405,6 +1427,48 @@ function rowEl(r) {
   tdE.append(box);
   tr.append(tdE);
   return tr;
+}
+
+// Lignes dont le classement peut surprendre : leur diagnostic se copie (1.1.28,
+// Ori de Nayr).
+const DIAG_STATUSES = ["none", "same_video", "renamed", "in_client", "partial", "error", "gone_v3x"];
+
+async function copyDiag(r, btn) {
+  btn.disabled = true;
+  try {
+    const d = await api("/ui/rows/diag?key=" + encodeURIComponent(r.key));
+    const ta = $("#diag-text");
+    ta.value = d.text;
+    $("#diag").showModal();
+    ta.focus();
+    ta.select();
+  } catch (e) {
+    if (e.message !== "session") toast(e.message, "bad");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Copie dans le presse-papiers ; repli pour une page ouverte en http sur le
+// réseau (Docker, serveur), où le presse-papiers moderne est refusé.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* repli */ }
+  const ta = el("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  ta.remove();
+  return ok;
 }
 
 function toggle(key, on) {
@@ -1649,6 +1713,18 @@ async function boot() {
     }
     ui.shown = PAGE;
     renderRows();
+  });
+  $("#diag-close").addEventListener("click", () => $("#diag").close());
+  $("#diag-copy").addEventListener("click", async () => {
+    const ta = $("#diag-text");
+    if (await copyText(ta.value)) {
+      $("#diag").close();
+      toast("Diagnostic copié : colle-le dans ton message au staff.", "ok");
+    } else {
+      ta.focus();
+      ta.select();
+      toast("Copie bloquée par le navigateur : le texte est sélectionné, fais Ctrl+C.", "bad");
+    }
   });
   $("#f-hide-forbidden").addEventListener("change", (ev) => {
     try { localStorage.setItem("d3x-hide-forbidden", ev.target.checked ? "1" : "0"); } catch (e) { /* rien */ }

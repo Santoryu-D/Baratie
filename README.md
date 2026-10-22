@@ -33,13 +33,15 @@ L'analyse range tes releases en onglets :
 
 - **À ajouter** : identiques sur V3X. Les **relais** passent en tête (releases rares lâchées par un membre : une prime en jetons aux premiers qui la reprennent, après 24 h de seed), puis les **releases mortes** (plus aucun seeder depuis trois jours : ton seed les ramène, et la prime de résurrection tombe une fois qu'elles ont servi).
 - **Noms différents** : les mêmes fichiers sous d'autres noms (voir les [questions](#questions)).
-- **Pas sur V3X** : ce que tu seedes ailleurs et qui manque à V3X. « Publier » ouvre la fiche d'une release, ou coches-en plusieurs pour les passer au crible du lot. Celles qui répondent à une **demande ouverte** sur le site sont en tête, avec la prime ; une fois ta release publiée et validée, D3X la propose au demandeur d'un clic. Une release seedée plusieurs fois (un torrent par tracker, sur des liens physiques) n'y apparaît qu'une fois, avec son nombre de copies (×2, ×3…). Celles d'une team qui interdit le réupload, ou le soumet à son accord, portent une pastille qui le dit, et une case les masque.
+- **Pas sur V3X** : ce que tu seedes ailleurs et qui manque à V3X. « Publier » ouvre la fiche d'une release, ou coches-en plusieurs pour les passer au crible du lot. Celles qui répondent à une **demande ouverte** sur le site sont en tête, avec la prime ; une fois ta release publiée et validée, D3X la propose au demandeur d'un clic. Une release seedée plusieurs fois (un torrent par tracker, sur des liens physiques) n'y apparaît qu'une fois, avec son nombre de copies (×2, ×3…). Celles d'une team qui interdit le réupload, ou le soumet à son accord, portent une pastille qui le dit, comme celles d'un **groupe refusé sur V3X** (avec la raison donnée par le site), et une case masque celles que V3X refusera.
 - **Autres** :
-  - **Même vidéo sur V3X** : le plus gros fichier de ta copie, une vidéo de 200 Mio ou plus, existe à l'octet près dans une fiche V3X, sous une autre forme (nom refait, .nfo en plus, dossier au lieu d'un fichier seul). Rien ne manque au site, rien à publier. Pour une image disque (`.iso`, souvent un jeu), la taille ne suffit pas : il faut aussi le même nom de release, et la ligne devient **Même fichier sur V3X**.
+  - **Même vidéo sur V3X** : le plus gros fichier de ta copie, une vidéo de 200 Mio ou plus, existe à l'octet près dans une fiche V3X, sous une autre forme (nom refait, .nfo en plus, dossier au lieu d'un fichier seul). Rien ne manque au site, rien à publier. Pour une image disque (`.iso`, souvent un jeu), la taille ne suffit pas : il faut aussi le même nom de release, ou une image au même nom de fichier que celle de la fiche, et la ligne devient **Même fichier sur V3X**.
   - **Absente du disque** : le client croit la copie complète, mais ses fichiers ne sont plus là (supprimés, ou déplacés par un outil de médiathèque). D3X ne l'ajoute pas.
   - **Retirée de V3X** : aucune fiche en ligne, mais V3X a retiré (ou remplacé, archivé) une fiche de ce contenu. D3X ne la propose pas à la publication ; le motif s'affiche si c'était ta fiche. Publier reste possible si la raison ne s'applique plus.
 
 Au-dessus de la liste, **Filtrer** ne garde que les releases dont le nom contient tous tes mots ; un mot précédé de « - » les écarte (`1080p MULTi -720p`, ou le tag d'une team). « Tout cocher » ne prend que ce qui est affiché.
+
+Une release classée d'une façon qui te surprend : **Diagnostic** affiche ce que D3X en sait (nom, fichiers et tailles, ce qu'il en a conclu), sans info-hash ni chemin sur ton disque, prêt à copier pour le staff.
 
 Une release que tu ne veux pas seeder pour l'instant : **Ignorer** la retire de la liste et de « Tout cocher », et elle ne revient plus à chaque analyse. Ça marche dans « À ajouter », « Noms différents » et « Pas sur V3X » ; « Les réafficher » la retrouve. La liste des releases ignorées reste sur l'appareil.
 
@@ -210,7 +212,7 @@ Chaque version publie `checksums.txt` (l'empreinte SHA-256 de chaque fichier) et
 ## Régler
 
 1. **Ta clé API V3X** : [Réglages ▸ Intégrations](https://v3x.club/settings?tab=integrations) sur le site, avec le droit « Torznab » (cross-seed) et le droit « Upload » (publier).
-2. **Ton client torrent**, par son interface web, ou plusieurs (« Ajouter un autre client »). Le bouton *Détecter sur ce PC* trouve ceux qui tournent ici. « Tester la connexion » essaie un client sans rien enregistrer.
+2. **Ton client torrent**, par son interface web, ou plusieurs (« Ajouter un autre client »). Le bouton *Détecter sur ce PC* trouve ceux qui tournent ici. « Tester la connexion » essaie un client sans rien enregistrer ; s'il ne répond pas, D3X dit quoi vérifier (adresse, port, pare-feu, adresse vue depuis Docker).
 3. **Ta seedbox** (facultatif), par SSH, pour publier ce qui s'y trouve.
 4. **Les dossiers du client** (facultatif), pour chaque client : s'il tourne ailleurs (NAS, Docker), une ligne par dossier, son chemin ici et le même vu par le client.
 5. **Catégorie et étiquette** (facultatif), posées sur chaque torrent ajouté par D3X pour les retrouver dans ton client, et une **catégorie de tes publications** pour ranger à part ce que tu publies avec Publier et le Lot (vide : la même).

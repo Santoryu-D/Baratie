@@ -142,6 +142,7 @@ func NewWith(version string, cfg *config.Config, token string, port int, opts Op
 	s.mux.HandleFunc("POST /ui/stop", s.stop)
 	s.mux.HandleFunc("GET /ui/status", s.status)
 	s.mux.HandleFunc("GET /ui/rows", s.rows)
+	s.mux.HandleFunc("GET /ui/rows/diag", s.rowDiag)
 	s.mux.HandleFunc("POST /ui/apply", s.apply)
 	s.mux.HandleFunc("POST /ui/remove", s.remove)
 	s.mux.HandleFunc("POST /ui/recheck", s.recheck)
@@ -583,6 +584,16 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) rows(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"version": s.engine.State().Version, "rows": s.engine.Rows()})
+}
+
+// rowDiag : le diagnostic d'une ligne de l'analyse, à copier pour le staff.
+func (s *Server) rowDiag(w http.ResponseWriter, r *http.Request) {
+	text, ok := s.engine.Diag(r.Context(), r.URL.Query().Get("key"), s.Version)
+	if !ok {
+		fail(w, http.StatusNotFound, errors.New("cette ligne n'est plus dans l'analyse, relance-la"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"text": text})
 }
 
 func (s *Server) apply(w http.ResponseWriter, r *http.Request) {

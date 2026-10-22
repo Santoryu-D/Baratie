@@ -82,15 +82,16 @@ type Sig struct {
 	Total       int64  `json:"total"`
 	Real        int64  `json:"real"` // hors fichiers de bourrage
 	Files       int    `json:"files"`
-	Big         int64  `json:"big,omitempty"`    // taille du plus gros fichier
-	BigExt      string `json:"bigExt,omitempty"` // son extension (« . » s'il n'en a pas)
+	Big         int64  `json:"big,omitempty"`     // taille du plus gros fichier
+	BigExt      string `json:"bigExt,omitempty"`  // son extension (« . » s'il n'en a pas)
+	BigName     string `json:"bigName,omitempty"` // son nom, sans dossier
 }
 
 // noteFile compte un fichier dans l'empreinte et retient le plus gros.
 func (s *Sig) noteFile(p string, size int64) {
 	s.Real += size
 	if size > s.Big {
-		s.Big, s.BigExt = size, extOf(p)
+		s.Big, s.BigExt, s.BigName = size, extOf(p), path.Base(strings.ReplaceAll(p, `\`, "/"))
 	}
 }
 
@@ -523,9 +524,20 @@ func (e *Engine) runScan(ctx context.Context) error {
 		}
 	}
 	// Simple confort : si le site ne répond pas, ces lignes restent « Pas sur
-	// V3X », l'analyse ne tombe pas pour autant.
-	if err := e.markSameVideo(ctx, env.V3X, retry, byID, left, known, fresh); err != nil && ctx.Err() != nil {
-		return errors.New("analyse arrêtée")
+	// V3X », l'analyse ne tombe pas pour autant, mais le dit (1.1.28 : l'échec
+	// passait sans un mot).
+	if err := e.markSameVideo(ctx, env.V3X, retry, byID, left, known, fresh); err != nil {
+		if ctx.Err() != nil {
+			return errors.New("analyse arrêtée")
+		}
+		e.mu.Lock()
+		msg := "rapprochement par fichier (même vidéo, même image disque) impossible : " + err.Error()
+		if e.scan.Warn != "" {
+			e.scan.Warn += " ; " + msg
+		} else {
+			e.scan.Warn = msg
+		}
+		e.mu.Unlock()
 	}
 
 	// Plusieurs copies identiques rangées à des endroits différents (une par
@@ -651,6 +663,11 @@ func sameReleaseName(a, b string) bool {
 	return na != "" && na == norm(b)
 }
 
+// sameFileName : même nom de fichier, à la casse près (« Ori…-Mephisto.iso »).
+func sameFileName(a, b string) bool {
+	return a != "" && b != "" && strings.EqualFold(path.Base(a), path.Base(b))
+}
+
 // markSameVideo : une release absente du catalogue sous cette forme peut y
 // être sous une autre (nom refait, .nfo en plus, dossier au lieu d'un fichier
 // seul ; Motives chez Luci, 21/10/26). L'empreinte de la release entière ne
@@ -661,11 +678,13 @@ func sameReleaseName(a, b string) bool {
 func (e *Engine) markSameVideo(ctx context.Context, v *v3x.Client, retry *v3x.Retry, byID map[string]Target, rows []*Row, known map[string]bool, fresh map[string]Sig) error {
 	reread := false
 	for _, r := range rows {
-		if (r.sig.Big > 0 && r.sig.BigExt != "") || ctx.Err() != nil {
+		// Image disque : son nom de fichier sert au rapprochement (1.1.28), une
+		// empreinte d'avant ne l'a pas et se relit.
+		if (r.sig.Big > 0 && r.sig.BigExt != "" && (r.sig.BigName != "" || !sameFileExt[r.sig.BigExt])) || ctx.Err() != nil {
 			continue
 		}
 		if r.sig.Files == 1 {
-			r.sig.Big, r.sig.BigExt = r.sig.Real, extOf(r.sig.Name)
+			r.sig.Big, r.sig.BigExt, r.sig.BigName = r.sig.Real, extOf(r.sig.Name), r.sig.Name
 			continue
 		}
 		// Empreinte d'une version d'avant : la taille ou l'extension du plus
@@ -703,10 +722,13 @@ func (e *Engine) markSameVideo(ctx context.Context, v *v3x.Client, retry *v3x.Re
 				continue
 			}
 			for _, r := range bySize[size] {
-				// Image disque : seulement une fiche au même nom de release.
+				// Image disque : seulement une fiche au même nom de release, ou dont
+				// l'image porte le même nom de fichier (Nayr, 22/10/26 : sa copie
+				// d'Ori vient d'ailleurs sous un autre nom de release, avec le même
+				// .iso à l'octet et au nom près).
 				file := sameFileExt[r.sig.BigExt]
 				best, inClient, ok := bestFileMatch(list, known, func(m v3x.FileMatch) bool {
-					return !file || sameReleaseName(m.Name, r.Name)
+					return !file || sameReleaseName(m.Name, r.Name) || sameFileName(m.File, r.sig.BigName)
 				})
 				if !ok {
 					continue

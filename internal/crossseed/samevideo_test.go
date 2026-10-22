@@ -1,6 +1,7 @@
 package crossseed
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -97,18 +98,23 @@ func TestSameVideo(t *testing.T) {
 // sur V3X » seulement si la fiche porte le même nom de release ; un autre jeu
 // de la même taille reste « Pas sur V3X ».
 func TestSameFileISO(t *testing.T) {
+	const oriISO = "Ori.and.the.Will.of.the.Wisps-Mephisto.iso"
 	for _, tc := range []struct {
-		name, v3xName, want string
+		name, local, v3xName, v3xFile, want string
 	}{
-		{"même nom", "Ori.and.the.Will.of.the.Wisps-Mephisto", StSameVideo},
-		{"autre jeu", "Un.Autre.Jeu-GRP", StNone},
+		{"même nom", "Ori.and.the.Will.of.the.Wisps-Mephisto", "Ori.and.the.Will.of.the.Wisps-Mephisto", "", StSameVideo},
+		{"autre jeu", "Ori.and.the.Will.of.the.Wisps-Mephisto", "Un.Autre.Jeu-GRP", "Un.Autre.Jeu-GRP.iso", StNone},
+		// Nayr, 22/10/26 : la copie vient d'ailleurs sous un autre nom de
+		// release, l'image a le même nom de fichier que celle de la fiche.
+		{"autre nom, même fichier", "Ori.and.the.Will.of.the.Wisps.MULTi.ISO-Mephisto", "Ori.and.the.Will.of.the.Wisps-Mephisto", oriISO, StSameVideo},
+		{"autre nom, autre fichier", "Ori.and.the.Will.of.the.Wisps.MULTi.ISO-Mephisto", "Ori.and.the.Will.of.the.Wisps-Mephisto", "setup.iso", StNone},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			isolatedConfig(t)
 			const iso = int64(400_000_000)
-			raw := mkTorrent("Ori.and.the.Will.of.the.Wisps-Mephisto", map[string]int64{
-				"Ori.and.the.Will.of.the.Wisps-Mephisto/Ori.and.the.Will.of.the.Wisps-Mephisto.iso": iso,
-				"Ori.and.the.Will.of.the.Wisps-Mephisto/mephisto.nfo":                               5_000,
+			raw := mkTorrent(tc.local, map[string]int64{
+				tc.local + "/" + oriISO:    iso,
+				tc.local + "/mephisto.nfo": 5_000,
 			}, "https://autre.invalid/announce", "AUTRE")
 			p, _ := torrent.Parse(raw)
 			fq := &fakeQbit{list: map[string]*fakeTorrent{}, complete: map[string]float64{}}
@@ -127,7 +133,7 @@ func TestSameFileISO(t *testing.T) {
 					io.WriteString(w, `{"results":[]}`)
 				case "/api/d3x/match-files":
 					json.NewEncoder(w).Encode(map[string]interface{}{"matches": map[string][]v3x.FileMatch{
-						"400000000": {{ID: "66666666-6666-4666-8666-666666666666", Name: tc.v3xName, InfoHash: strings.Repeat("cd", 20), Size: iso + 8_774, FileCount: 2, Seeders: 4}},
+						"400000000": {{ID: "66666666-6666-4666-8666-666666666666", Name: tc.v3xName, File: tc.v3xFile, InfoHash: strings.Repeat("cd", 20), Size: iso + 8_774, FileCount: 2, Seeders: 4}},
 					}})
 				default:
 					w.WriteHeader(http.StatusNotFound)
@@ -152,6 +158,11 @@ func TestSameFileISO(t *testing.T) {
 				}
 				if tc.want == StNone && r.Match != nil {
 					t.Fatalf("autre jeu rattaché : %+v", r.Match)
+				}
+				// Diagnostic (1.1.28) : les fichiers et leurs tailles, jamais l'info-hash.
+				d, ok := e.Diag(context.Background(), r.Key, "test")
+				if !ok || !strings.Contains(d, oriISO+" : 400000000 octets") || strings.Contains(d, h) {
+					t.Fatalf("diagnostic : %s", d)
 				}
 				return
 			}
