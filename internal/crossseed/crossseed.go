@@ -196,6 +196,9 @@ type Engine struct {
 	lib      library
 	batch    int // releases du lot d'ajout en cours
 	batchOK  int // déjà traitées
+	// Publications vérifiées gardées à l'arrêt jusqu'à ce moment (option
+	// « Démarrer le seed à la fin du lot », voir HoldPublished).
+	holdPub time.Time
 }
 
 // New crée le moteur et reprend la surveillance des ajouts en cours.

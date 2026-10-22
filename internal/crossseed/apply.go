@@ -304,6 +304,15 @@ func (e *Engine) step(ctx context.Context, q client.Client, h string, byHash map
 		w.EndAt = time.Time{}
 		e.mu.Unlock()
 	case t.Progress >= 1:
+		e.mu.Lock()
+		held := e.heldLocked(w)
+		if held {
+			w.Status, w.Detail, w.Progress = StChecking, HeldDetail, 1
+		}
+		e.mu.Unlock()
+		if held {
+			return
+		}
 		if err := q.Start(ctx, h); err != nil {
 			set(StChecking, "vérifié à 100 %, démarrage refusé : "+err.Error())
 			return
@@ -473,6 +482,39 @@ func (e *Engine) Watch(clientID, key, name, id, hash string) {
 	e.watches[hash] = &watch{Client: clientID, Key: key, Name: name, ID: id, InfoHash: hash, Since: time.Now(), Status: StChecking}
 	delete(e.final, hash)
 	e.saveWatchesLocked()
+}
+
+// Seed à la fin du lot (karat, 22/10/26) : pendant qu'un lot hache les
+// releases suivantes, une release publiée et vérifiée à 100 % reste à l'arrêt,
+// pour que son seed ne lise pas le disque en même temps que le hachage. La
+// page du lot renouvelle ce bail tant qu'elle tourne et le lève à la fin ;
+// page fermée ou D3X redémarré, il expire seul et les seeds démarrent.
+
+// HeldDetail : publication vérifiée, gardée à l'arrêt jusqu'à la fin du lot.
+const HeldDetail = "vérifiée à 100 %, démarre à la fin du lot"
+
+// MaxHold : bail le plus long qu'une page peut demander d'un coup.
+const MaxHold = 15 * time.Minute
+
+// HoldPublished garde les publications vérifiées à l'arrêt pendant d ; 0
+// lève le bail : elles démarrent au prochain passage de la surveillance.
+func (e *Engine) HoldPublished(d time.Duration) {
+	if d > MaxHold {
+		d = MaxHold
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if d <= 0 {
+		e.holdPub = time.Time{}
+		return
+	}
+	e.holdPub = time.Now().Add(d)
+}
+
+// heldLocked : cet ajout est-il une publication à garder à l'arrêt pour
+// l'instant ? Les cross-seeds ne sont jamais retenus.
+func (e *Engine) heldLocked(w *watch) bool {
+	return strings.HasPrefix(w.Key, "pub:") && time.Now().Before(e.holdPub)
 }
 
 // WatchOf renvoie l'état d'un ajout suivi, ou terminé depuis le lancement.

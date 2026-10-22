@@ -1164,7 +1164,7 @@ function renderDone() {
   if (j.published.uploadBonus) p.textContent = "Prime d'upload : " + j.published.uploadBonus.toLocaleString("fr-FR") + " jetons. ";
   let seed;
   if (j.seedError) seed = "Seed : " + j.seedError + ". Ajoute le .torrent à ton client à la main, depuis la fiche.";
-  else if (!j.seed || j.seed.status === "checking") seed = "Seed : ton client vérifie les fichiers" + (j.seed && j.seed.progress ? " (" + Math.round(j.seed.progress * 100) + " %)" : "") + "…";
+  else if (!j.seed || (j.seed.status === "checking" && !j.seed.detail)) seed = "Seed : ton client vérifie les fichiers" + (j.seed && j.seed.progress ? " (" + Math.round(j.seed.progress * 100) + " %)" : "") + "…";
   else if (j.seed.status === "seeding") seed = "Seed : vérifié à 100 %, ta release est en seed.";
   else seed = "Seed : " + (j.seed.detail || j.seed.status);
   const s = el("p", null, seed);

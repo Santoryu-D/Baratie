@@ -547,11 +547,25 @@ function waitCheckSaved() {
   try { return localStorage.getItem("d3x-lot-waitcheck") === "1"; } catch (err) { return false; }
 }
 
+// Option « Démarrer le seed à la fin du lot » (karat, 22/10/26) : les releases
+// publiées restent à l'arrêt pendant que le lot hache les suivantes. Le bail
+// est renouvelé chaque minute tant que le lot tourne et levé à la fin ; page
+// fermée, il expire seul au bout de 5 minutes et les seeds démarrent.
+const HELD = "vérifiée à 100 %, démarre à la fin du lot";
+
+function seedLaterSaved() {
+  try { return localStorage.getItem("d3x-lot-seedlater") === "1"; } catch (err) { return false; }
+}
+
+function holdSeeds(seconds) {
+  return api("/ui/batch/hold", { seconds }).catch(() => { /* bail suivant, ou expiration */ });
+}
+
 async function lotRun() {
   if (lot.running) return;
   if (!pub.ctx) await loadCtx();
   if (!pub.ctx) return toast("Publication impossible : " + (pub.ctxError || "V3X injoignable"), "bad");
-  const opts = { sim: $("#b-sim").checked, video: $("#b-video").checked, fixName: $("#b-fixname").checked, waitCheck: $("#b-waitcheck").checked, cap: Number($("#b-cap").value) || 0, max: Number($("#b-max").value) || 0, maxGib: Number($("#b-maxgib").value) || 0 };
+  const opts = { sim: $("#b-sim").checked, video: $("#b-video").checked, fixName: $("#b-fixname").checked, waitCheck: $("#b-waitcheck").checked, seedLater: $("#b-seedlater").checked, cap: Number($("#b-cap").value) || 0, max: Number($("#b-max").value) || 0, maxGib: Number($("#b-maxgib").value) || 0 };
   // Seulement ce qui est coché ET affiché à l'écran : un dossier apparu entre-temps
   // n'est jamais publié sans avoir été vu.
   const todo = lot.entries.filter((e) => e.checked && (e.state === "pending" || e.state === "ready" || e.state === "review" || e.state === "simulated"));
@@ -563,6 +577,33 @@ async function lotRun() {
   lot.total = todo.length;
   lot.tab = "pending";
   lotRender();
+  const hold = opts.seedLater && !opts.sim;
+  let holdTimer = null;
+  if (hold) {
+    await holdSeeds(300);
+    holdTimer = setInterval(() => holdSeeds(300), 60000);
+  }
+  try {
+    await lotLoop(todo, opts);
+  } finally {
+    if (holdTimer) clearInterval(holdTimer);
+    if (hold) {
+      await holdSeeds(0);
+      for (const e of lot.entries) if (e.detail) e.detail = e.detail.replace(HELD, "seed lancé à la fin du lot");
+    }
+  }
+  lot.running = false;
+  lot.current = "";
+  lotProgress("", "");
+  const counts = {};
+  for (const e of lot.entries) counts[e.state] = (counts[e.state] || 0) + 1;
+  lot.tab = opts.sim ? "simulated" : counts.published ? "published" : "review";
+  lotRender();
+  const started = hold && lot.published ? " Leurs seeds démarrent maintenant." : "";
+  toast((lot.stop ? "Lot arrêté." : "Lot terminé : " + (opts.sim ? (counts.simulated || 0) + " seraient publiées" : lot.published + " publiées") + ", " + (counts.review || 0) + " à revoir.") + started, "ok");
+}
+
+async function lotLoop(todo, opts) {
   for (const e of todo) {
     if (lot.stop) break;
     if (opts.max > 0 && lot.published >= opts.max && !opts.sim) {
@@ -598,14 +639,6 @@ async function lotRun() {
       for (let i = 0; i < 7 && !lot.stop; i++) await wait(1000);
     }
   }
-  lot.running = false;
-  lot.current = "";
-  lotProgress("", "");
-  const counts = {};
-  for (const e of lot.entries) counts[e.state] = (counts[e.state] || 0) + 1;
-  lot.tab = opts.sim ? "simulated" : counts.published ? "published" : "review";
-  lotRender();
-  toast(lot.stop ? "Lot arrêté." : "Lot terminé : " + (opts.sim ? (counts.simulated || 0) + " seraient publiées" : lot.published + " publiées") + ", " + (counts.review || 0) + " à revoir.", "ok");
 }
 
 window.batchShow = async (on) => {
@@ -651,6 +684,10 @@ function bindBatch() {
   $("#b-waitcheck").checked = waitCheckSaved();
   $("#b-waitcheck").addEventListener("change", (ev) => {
     try { localStorage.setItem("d3x-lot-waitcheck", ev.target.checked ? "1" : "0"); } catch (err) { /* rien */ }
+  });
+  $("#b-seedlater").checked = seedLaterSaved();
+  $("#b-seedlater").addEventListener("change", (ev) => {
+    try { localStorage.setItem("d3x-lot-seedlater", ev.target.checked ? "1" : "0"); } catch (err) { /* rien */ }
   });
   $("#b-reset").addEventListener("click", lotReset);
   $("#b-all").addEventListener("change", (ev) => {
