@@ -88,6 +88,8 @@ var preparedKeys = map[string]bool{
 	"categoryId": true, "description": true, "descriptionFormat": true, "title": true, "releaseName": true,
 	"nfo": true, "language": true, "anonymous": true, "exclusive": true, "season": true, "tmdbUrl": true,
 	"creator": true, "noTmdb": true, "virusTotalUrl": true, "teamRelease": true,
+	// Jaquette d'un jeu (1.1.21) : sans elle, le lot publiait le jeu sans affiche.
+	"posterUrl": true,
 }
 
 func (s *Server) batchPrepare(w http.ResponseWriter, r *http.Request) {

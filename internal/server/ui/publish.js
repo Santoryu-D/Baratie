@@ -266,11 +266,67 @@ async function choose(path, source, opts) {
     renderJob();
     runMediaInfo();
     window.musicSetup();
+    // Release déjà gardée pour le lot : sa fiche revient telle qu'elle a été
+    // gardée, au lieu d'une fiche neuve (AntoineAngel, 22/10/26 : « Revoir »
+    // donnait l'impression que les fiches gardées étaient perdues).
+    if (opts && opts.fromLot) await restoreKept(path);
     loadFiche();
     pollJob();
   } catch (e) {
     if (e.message !== "session") toast(e.message, "bad");
   }
+}
+
+// Remet dans le formulaire la fiche gardée pour le lot, si elle existe. Les
+// champs repris comptent comme retouchés : la fiche de V3X ne les écrase pas.
+async function restoreKept(path) {
+  let p;
+  try {
+    p = await api("/ui/batch/prepared?source=" + pub.source + "&path=" + encodeURIComponent(path));
+  } catch (e) {
+    return; // pas de fiche gardée : fiche neuve, comme avant
+  }
+  const f = (p && p.fields) || {};
+  const put = (id, key, v) => {
+    if (v == null || v === "") return;
+    $(id).value = v;
+    pub.dirty[key] = true;
+  };
+  put("#f-name", "name", f.releaseName);
+  put("#f-title", "title", f.title);
+  put("#f-nfo", "nfo", f.nfo);
+  put("#f-season", "season", f.season);
+  if (f.language != null) {
+    $("#f-lang").value = f.language;
+    pub.dirty.language = true;
+  }
+  for (const c of (pub.ctx && pub.ctx.categories) || []) {
+    const leaf = (c.children || []).find((k) => String(k.id) === f.categoryId);
+    if (!leaf) continue;
+    $("#f-root").value = c.slug;
+    fillLeaves(c.slug, leaf.slug);
+    pub.dirty.category = true;
+    break;
+  }
+  $("#f-anon").checked = f.anonymous === "true";
+  $("#f-excl").checked = f.exclusive === "true";
+  if (f.teamRelease != null) {
+    $("#f-team").checked = f.teamRelease === "true";
+    pub.dirty.team = true;
+  }
+  $("#f-notmdb").checked = f.noTmdb === "true";
+  put("#f-vt", "vt", f.virusTotalUrl);
+  const m = /themoviedb\.org\/(movie|tv)\/(\d+)/.exec(f.tmdbUrl || "");
+  if (m) pub.tmdb = { type: m[1], id: Number(m[2]), title: f.title || "", year: null, posterUrl: null };
+  if (f.posterUrl) pub.keptPoster = f.posterUrl;
+  if (f.description != null) {
+    $("#f-desc").value = f.description;
+    pub.dirty.desc = true;
+    setFormat(f.descriptionFormat === "html" ? "html" : "standard");
+  }
+  gameSetup();
+  renderTmdbPicked();
+  toast("Fiche gardée rechargée : tes retouches sont là.", "ok");
 }
 
 // Même phrase que D3X côté serveur (v3x.Gone.Text).
@@ -289,6 +345,7 @@ function resetForm() {
   pub.miState = "idle";
   pub.tmdb = null;
   pub.game = null;
+  pub.keptPoster = "";
   pub.dirty = {};
   for (const id of ["#f-name", "#f-title", "#f-season", "#f-desc", "#f-nfo", "#f-vt", "#tmdb-q", "#game-q"]) $(id).value = "";
   $("#game-results").replaceChildren();
@@ -645,8 +702,20 @@ function pickTmdb(it) {
   pub.tmdb = { type: it.type, id: it.id, title: it.title, year: it.year, posterUrl: it.posterUrl };
   $("#f-notmdb").checked = false;
   $("#tmdb-results").replaceChildren();
+  renderTmdbPicked();
+  loadFiche();
+}
+
+// Encart de l'œuvre TMDB choisie (pub.tmdb), aussi pour une fiche gardée
+// rechargée.
+function renderTmdbPicked() {
+  const it = pub.tmdb;
   const p = $("#tmdb-picked");
   p.replaceChildren();
+  if (!it) {
+    p.classList.add("hidden");
+    return;
+  }
   if (it.posterUrl && /^https:\/\//.test(it.posterUrl)) {
     const img = el("img");
     img.src = it.posterUrl;
@@ -670,7 +739,6 @@ function pickTmdb(it) {
   t.append(ch);
   p.append(t);
   p.classList.remove("hidden");
-  loadFiche();
 }
 
 // ---------- jeux vidéo (Nayr, 22/10/26) ----------
@@ -1011,8 +1079,10 @@ function fields() {
   };
   if ($("#f-root").value === "series" && $("#f-season").value.trim()) f.season = $("#f-season").value.trim();
   if (pub.tmdb && !isGame()) f.tmdbUrl = "https://www.themoviedb.org/" + pub.tmdb.type + "/" + pub.tmdb.id;
-  // Jeu : la jaquette, comme la page d'upload (affiche de la fiche).
-  if (gamePoster()) f.posterUrl = gamePoster();
+  // Jeu : la jaquette, comme la page d'upload (affiche de la fiche), ou celle
+  // d'une fiche gardée rechargée tant qu'aucun autre jeu n'est choisi.
+  const poster = gamePoster() || (!pub.game && pub.keptPoster) || "";
+  if (poster) f.posterUrl = poster;
   // Musique : le lien MusicBrainz, comme sur la page d'upload (titre, jaquette).
   if (isAlbum() && pub.mb) {
     f.tmdbUrl = mbURL(pub.mb);

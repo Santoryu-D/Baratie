@@ -22,7 +22,7 @@ func TestPreparedForLot(t *testing.T) {
 
 	code, _, body := call(t, s, http.MethodPost, "/ui/batch/prepare", map[string]interface{}{
 		"path": path, "source": "local", "name": "Album - Titre [FLAC]", "summary": "Audio ▸ Musique · Titre (2020)",
-		"fields": map[string]string{"releaseName": "Album - Titre [FLAC 16bit-44.1kHz]", "categoryId": "42", "description": "[b]Fiche[/b]", "pirate": "x"},
+		"fields": map[string]string{"releaseName": "Album - Titre [FLAC 16bit-44.1kHz]", "categoryId": "42", "description": "[b]Fiche[/b]", "posterUrl": "https://images.igdb.com/igdb/image/upload/t_cover_big/x.jpg", "pirate": "x"},
 	})
 	if code != http.StatusOK {
 		t.Fatalf("prepare : %d %s", code, body)
@@ -35,6 +35,10 @@ func TestPreparedForLot(t *testing.T) {
 	f, _ := out["fields"].(map[string]interface{})
 	if f["releaseName"] != "Album - Titre [FLAC 16bit-44.1kHz]" || f["categoryId"] != "42" || f["description"] != "[b]Fiche[/b]" {
 		t.Fatalf("champs relus : %v", f)
+	}
+	// La jaquette d'un jeu fait partie de la fiche gardée (1.1.23).
+	if f["posterUrl"] != "https://images.igdb.com/igdb/image/upload/t_cover_big/x.jpg" {
+		t.Fatalf("jaquette perdue : %v", f)
 	}
 	if _, bad := f["pirate"]; bad {
 		t.Fatal("un champ inconnu a été gardé")
