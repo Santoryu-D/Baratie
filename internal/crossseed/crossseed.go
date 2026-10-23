@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -170,6 +171,9 @@ type watch struct {
 	// états intermédiaires pendant une revérification).
 	EndAt       time.Time `json:"endAt,omitempty"`
 	EndProgress float64   `json:"endProgress,omitempty"`
+	// MinProgress : démarre dès cette vérification atteinte, sous 100 %
+	// (release de la médiathèque à compléter) ; 0 = 100 % exigé.
+	MinProgress float64 `json:"minProgress,omitempty"`
 	// Absent de la liste du client depuis ce moment : « retiré » seulement
 	// après missGrace (un client qui redémarre répond un temps sans ses
 	// torrents ; exodius19, 21/10/26, Transmission en conteneur).
@@ -492,6 +496,12 @@ func (e *Engine) runScan(ctx context.Context) error {
 				r.Detail = m.Gone.Text() + " : D3X ne la propose pas à la publication (Publier reste possible si la raison ne s'applique plus)"
 				continue
 			}
+			// Petite release rapprochée par les tailles seules (un livre dont le
+			// nom ne diffère que par les majuscules, Luci 23/10/26) : seulement
+			// au même nom, à la casse et à la ponctuation près.
+			if m.NameCheck && !sameReleaseName(m.Name, r.Name) {
+				continue
+			}
 			r.Match = m
 			switch {
 			case m.Kind == "self":
@@ -663,6 +673,15 @@ func sameReleaseName(a, b string) bool {
 	return na != "" && na == norm(b)
 }
 
+// looksLikeFileExt : « .mkv », « .epub »… et pas la fin d'un nom de release
+// (« .wisps-mephisto », « .x264 »), qui trahit un fichier rangé dans un dossier.
+var notAnExt = regexp.MustCompile(`^\.(?:[xh]26[45]|hevc|avc|av1|\d{3,4}p|web|dl|multi)$`)
+var fileExtRe = regexp.MustCompile(`^\.[a-z0-9]{2,4}$`)
+
+func looksLikeFileExt(ext string) bool {
+	return sameVideoExt[ext] || sameFileExt[ext] || (fileExtRe.MatchString(ext) && !notAnExt.MatchString(ext))
+}
+
 // sameFileName : même nom de fichier, à la casse près (« Ori…-Mephisto.iso »).
 func sameFileName(a, b string) bool {
 	return a != "" && b != "" && strings.EqualFold(path.Base(a), path.Base(b))
@@ -683,8 +702,12 @@ func (e *Engine) markSameVideo(ctx context.Context, v *v3x.Client, retry *v3x.Re
 		if (r.sig.Big > 0 && r.sig.BigExt != "" && (r.sig.BigName != "" || !sameFileExt[r.sig.BigExt])) || ctx.Err() != nil {
 			continue
 		}
-		if r.sig.Files == 1 {
-			r.sig.Big, r.sig.BigExt, r.sig.BigName = r.sig.Real, extOf(r.sig.Name), r.sig.Name
+		// Un seul fichier, nommé comme le torrent : c'est lui. Mais un fichier
+		// seul rangé dans un dossier porte le nom du dossier, sans extension
+		// (Ori de Nayr, 23/10/26 : « Ori…-Mephisto/Ori…-Mephisto.iso » lu comme
+		// un fichier d'extension « .wisps-mephisto ») : celui-là se relit.
+		if ext := extOf(r.sig.Name); r.sig.Files == 1 && looksLikeFileExt(ext) {
+			r.sig.Big, r.sig.BigExt, r.sig.BigName = r.sig.Real, ext, r.sig.Name
 			continue
 		}
 		// Empreinte d'une version d'avant : la taille ou l'extension du plus

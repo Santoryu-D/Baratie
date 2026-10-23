@@ -431,7 +431,10 @@ async function processEntry(e, opts) {
   const year = ((f.analysis && f.analysis.tokens) || []).find((t) => t.kind === "year");
   const isSeries = !!f.season || /\bS\d{1,2}(E\d{1,3})?\b/i.test(name);
   let work = null;
-  if (f.tmdbQuery && !album) {
+  // Série déjà choisie à la main pour une autre saison (quebecman, 23/10/26) :
+  // reprise telle quelle, sans nouvelle recherche.
+  if (isSeries && !album) work = rememberedSeries(seriesTitleOf(f));
+  if (!work && f.tmdbQuery && !album) {
     try {
       const r = await api("/ui/pub/tmdb/search?q=" + encodeURIComponent(f.tmdbQuery));
       work = certainWork((r.results || []).filter((x) => x.type === "movie" || x.type === "tv"), (f.analysis && f.analysis.title) || f.tmdbQuery, year && year.value, isSeries);
@@ -487,13 +490,15 @@ async function processEntry(e, opts) {
     return decide(e, "error", j.error || "le .torrent n'a pas pu être fabriqué");
   }
   const team = pub.ctx && pub.ctx.user && pub.ctx.user.team;
+  // Option « Reprendre le .nfo de la release » (Publier) : vaut aussi ici.
+  const ownNfo = keepNfoOn() ? await localNfoOf(j) : "";
   const fields = {
     categoryId: String(cat.id),
     description: f.presentation || "",
     descriptionFormat: "standard",
     title: f.title || "",
     releaseName: name,
-    nfo: f.nfo || "",
+    nfo: ownNfo ? nfoWithMediaInfo(ownNfo, mi) : f.nfo || "",
     language: f.language || "",
     anonymous: String(!!(pub.ctx && pub.ctx.user && pub.ctx.user.anonymousDefault)),
     exclusive: "false",

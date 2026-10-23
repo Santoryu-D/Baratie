@@ -25,7 +25,96 @@ const pub = {
   published: false,
   fromLot: "", // release du Lot ouverte par « Revoir » (sinon vide)
   format: "standard", // standard (BBCode) ou html, si V3X l'autorise au membre
+  localNfo: "", // .nfo de la release, lu sur le disque (option « Reprendre le .nfo »)
 };
+
+// ---------- .nfo de la release (quebecman, 23/10/26) ----------
+
+// Option gardée sur l'appareil : le .nfo de la release (NFO perso d'une team,
+// avec la source…) remplace celui que fabrique V3X, et le MediaInfo mesuré y
+// est ajouté s'il n'en contient pas déjà un.
+function keepNfoOn() {
+  try { return localStorage.getItem("d3x-keep-nfo") === "1"; } catch (e) { return false; }
+}
+
+// Les 128 caractères hauts de la page de code 437 (NFO à dessins ASCII).
+const CP437 = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ";
+
+function decodeNfo(bytes) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (e) {
+    let s = "";
+    for (const b of bytes) s += b < 128 ? String.fromCharCode(b) : CP437[b - 128];
+    return s;
+  }
+}
+
+// Le .nfo de la release : celui de son dossier (pas ceux des épisodes), de
+// préférence au nom de la release ; 256 Kio au plus. "" s'il n'y en a pas.
+async function localNfoOf(j) {
+  const nfos = (j.files || []).map((f, i) => ({ f, i })).filter((x) => /\.nfo$/i.test(x.f.rel) && x.f.size > 0 && x.f.size <= 262144);
+  if (!nfos.length) return "";
+  const depth = (x) => x.f.rel.split("/").length;
+  const top = Math.min(...nfos.map(depth));
+  const want = String(j.name).toLowerCase().replace(/\.[a-z0-9]{2,4}$/, "");
+  const named = (x) => (x.f.rel.toLowerCase().includes(want) ? 1 : 0);
+  const pick = nfos.filter((x) => depth(x) === top).sort((a, b) => named(b) - named(a))[0];
+  try {
+    const r = await fetch("/ui/pub/" + j.id + "/file/" + pick.i + "?offset=0&size=" + pick.f.size);
+    if (!r.ok) return "";
+    return decodeNfo(new Uint8Array(await r.arrayBuffer())).replace(/\r\n/g, "\n").replace(/\s+$/, "");
+  } catch (e) {
+    return "";
+  }
+}
+
+// Un MediaInfo est-il déjà dans ce texte ? (même repère que le site)
+function hasMediaInfo(t) {
+  return /^(General|Général)\s*$/m.test(t) || /(Complete name|Nom complet)\s*:/.test(t);
+}
+
+// NFO à publier : le .nfo de la release, suivi du MediaInfo s'il n'en a pas.
+function nfoWithMediaInfo(nfo, mi) {
+  if (!nfo) return "";
+  return hasMediaInfo(nfo) || !mi ? nfo : nfo + "\n\n" + mi;
+}
+
+// ---------- série choisie, reprise pour les autres saisons ----------
+
+// Une série choisie à la main sur TMDB pour une saison sert aux autres saisons
+// de la même série, dans Publier et dans le Lot (quebecman, 23/10/26 : choisir
+// Power une fois, pas à chaque saison). Gardé sur l'appareil.
+const SERIES_PICKS = "d3x-series-tmdb";
+
+function seriesKeyOf(title) {
+  return String(title || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "");
+}
+
+function seriesPicks() {
+  try { return JSON.parse(localStorage.getItem(SERIES_PICKS) || "{}") || {}; } catch (e) { return {}; }
+}
+
+function rememberSeries(title, it) {
+  const k = seriesKeyOf(title);
+  if (!it || it.type !== "tv" || k.length < 2) return;
+  const m = seriesPicks();
+  delete m[k];
+  m[k] = { type: "tv", id: it.id, title: it.title, year: it.year, posterUrl: it.posterUrl || null };
+  const keys = Object.keys(m);
+  for (const old of keys.slice(0, Math.max(0, keys.length - 300))) delete m[old];
+  try { localStorage.setItem(SERIES_PICKS, JSON.stringify(m)); } catch (e) { /* rien */ }
+}
+
+function rememberedSeries(title) {
+  const k = seriesKeyOf(title);
+  return k.length >= 2 ? seriesPicks()[k] || null : null;
+}
+
+// Titre de série d'une fiche V3X (le titre lu dans le nom de la release).
+function seriesTitleOf(f) {
+  return (f && f.analysis && f.analysis.title) || (f && f.tmdbQuery) || "";
+}
 
 const ERRORS = {
   validation: "un champ de la fiche est refusé",
@@ -267,6 +356,7 @@ async function choose(path, source, opts) {
     renderJob();
     runMediaInfo();
     window.musicSetup();
+    pub.localNfo = await localNfoOf(j);
     // Release déjà gardée pour le lot : sa fiche revient telle qu'elle a été
     // gardée, au lieu d'une fiche neuve (AntoineAngel, 22/10/26 : « Revoir »
     // donnait l'impression que les fiches gardées étaient perdues).
@@ -347,6 +437,7 @@ function resetForm() {
   pub.tmdb = null;
   pub.game = null;
   pub.keptPoster = "";
+  pub.localNfo = "";
   pub.dirty = {};
   for (const id of ["#f-name", "#f-title", "#f-season", "#f-desc", "#f-nfo", "#f-vt", "#tmdb-q", "#game-q"]) $(id).value = "";
   $("#game-results").replaceChildren();
@@ -642,10 +733,17 @@ function applyFiche(f, force) {
   setField("#f-season", "season", f.season, force);
   setField("#f-title", "title", f.title, force);
   if (!pub.dirty.team || force) $("#f-team").checked = !!f.teamRelease;
-  setField("#f-nfo", "nfo", f.nfo, force);
+  setField("#f-nfo", "nfo", keepNfoOn() && pub.localNfo ? nfoWithMediaInfo(pub.localNfo, pub.mediainfo) : f.nfo, force);
   if ((!pub.dirty.desc || force) && pub.format !== "html") {
     $("#f-desc").value = f.presentation || "";
     previewSoon(0);
+  }
+  // Série déjà choisie pour une autre saison : reprise d'office.
+  const again = !pub.tmdb && !isAlbum() && !isGame() && (f.season || /\bS\d{1,2}(E\d{1,3})?\b/i.test($("#f-name").value)) ? rememberedSeries(seriesTitleOf(f)) : null;
+  if (again) {
+    pub.tmdb = { ...again, remembered: true };
+    renderTmdbPicked();
+    loadFicheSoon();
   }
   if (!$("#tmdb-q").value && f.tmdbQuery && !pub.tmdb && !isAlbum() && !isGame()) {
     $("#tmdb-q").value = f.tmdbQuery;
@@ -726,6 +824,7 @@ async function searchTmdb() {
 
 function pickTmdb(it) {
   pub.tmdb = { type: it.type, id: it.id, title: it.title, year: it.year, posterUrl: it.posterUrl };
+  if (it.type === "tv") rememberSeries(seriesTitleOf(pub.fiche), it);
   $("#f-notmdb").checked = false;
   $("#tmdb-results").replaceChildren();
   renderTmdbPicked();
@@ -753,7 +852,7 @@ function renderTmdbPicked() {
   a.href = "https://www.themoviedb.org/" + it.type + "/" + it.id;
   a.target = "_blank";
   a.rel = "noopener";
-  t.append(a, el("div", "muted small", it.type === "tv" ? "Série" : "Film"));
+  t.append(a, el("div", "muted small", it.type === "tv" ? "Série" + (it.remembered ? " · reprise de ton choix pour une autre saison" : "") : "Film"));
   const ch = el("button", "link", "Changer");
   ch.type = "button";
   ch.addEventListener("click", () => {
@@ -1300,6 +1399,18 @@ function bindPublish() {
   }
   $("#f-team").addEventListener("change", () => { pub.dirty.team = true; loadFicheSoon(); });
   $("#f-tpl").addEventListener("change", () => loadFiche(false));
+  // .nfo de la release (quebecman) : option gardée sur l'appareil, appliquée
+  // tout de suite au NFO de la fiche ouverte.
+  $("#f-keepnfo").checked = keepNfoOn();
+  $("#f-keepnfo").addEventListener("change", (ev) => {
+    try { localStorage.setItem("d3x-keep-nfo", ev.target.checked ? "1" : "0"); } catch (e) { /* rien */ }
+    if (ev.target.checked && !pub.localNfo && pub.job) toast("Cette release n'a pas de .nfo : le NFO de V3X reste.", "");
+    const nfo = ev.target.checked && pub.localNfo ? nfoWithMediaInfo(pub.localNfo, pub.mediainfo) : (pub.fiche && pub.fiche.nfo) || "";
+    if (nfo) {
+      $("#f-nfo").value = nfo;
+      pub.dirty.nfo = false;
+    }
+  });
   $("#regen").addEventListener("click", () => { pub.dirty.desc = false; setFormat("standard"); loadFiche(false); });
   // Présentation chargée d'un fichier (GoodMoviesForBadPeople, 21/10/26) :
   // .html en HTML si V3X l'autorise, sinon le texte part en BBCode.

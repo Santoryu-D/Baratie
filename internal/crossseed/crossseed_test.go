@@ -224,13 +224,22 @@ func (f *fakeQbit) handler(t *testing.T) http.Handler {
 		if ft := f.list[h]; ft != nil {
 			ft.checkLeft = 2
 			if f.disk != nil {
+				// Comme un vrai client : chaque morceau qui touche un fichier
+				// absent du disque échoue, le reste est vérifié.
 				p, _ := torrent.Parse(ft.raw)
-				ft.after = 1
+				bad := map[int64]bool{}
 				for _, x := range p.Files {
-					if f.disk[ft.SavePath+"/"+f.namesOf(h, ft.raw)[x.Index]] != x.Size {
-						ft.after = 0.5
+					if f.disk[ft.SavePath+"/"+f.namesOf(h, ft.raw)[x.Index]] != x.Size && x.Size > 0 {
+						for i := x.Offset / p.PieceLength; i <= (x.Offset+x.Size-1)/p.PieceLength; i++ {
+							bad[i] = true
+						}
 					}
 				}
+				var missing int64
+				for i := range bad {
+					missing += min(p.PieceLength, p.Total-i*p.PieceLength)
+				}
+				ft.after = 1 - float64(missing)/float64(p.Total)
 			}
 		}
 	}))

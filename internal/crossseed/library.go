@@ -53,20 +53,26 @@ type LibraryIO interface {
 
 // LibRow : une release V3X retrouvée dans la médiathèque.
 type LibRow struct {
-	Key      string     `json:"key"`
-	Name     string     `json:"name"`
-	Size     int64      `json:"size"`
-	Files    int        `json:"files"`
-	Folder   string     `json:"folder,omitempty"` // où sont ses fichiers (vu par D3X)
-	Source   string     `json:"source"`
-	Status   string     `json:"status"` // add, partial, different, in_client, queued, checking, seeding, failed
-	Detail   string     `json:"detail,omitempty"`
-	Missing  []string   `json:"missing,omitempty"`
-	Progress float64    `json:"progress,omitempty"`
-	Match    *v3x.Match `json:"match"`
+	Key     string   `json:"key"`
+	Name    string   `json:"name"`
+	Size    int64    `json:"size"`
+	Files   int      `json:"files"`
+	Folder  string   `json:"folder,omitempty"` // où sont ses fichiers (vu par D3X)
+	Source  string   `json:"source"`
+	Status  string   `json:"status"` // add, partial, different, in_client, queued, checking, seeding, failed
+	Detail  string   `json:"detail,omitempty"`
+	Missing []string `json:"missing,omitempty"`
+	// MissBytes (« À compléter ») : ce que le client téléchargera, les
+	// morceaux qui contiennent les fichiers manquants.
+	MissBytes int64      `json:"missBytes,omitempty"`
+	Progress  float64    `json:"progress,omitempty"`
+	Match     *v3x.Match `json:"match"`
 
 	raw   []byte
 	pairs []libPair
+	// minProgress : vérification attendue pour une release à compléter (les
+	// morceaux des fichiers manquants en moins) ; 0 = 100 % exigé.
+	minProgress float64
 }
 
 type libPair struct {
@@ -78,7 +84,54 @@ type libPair struct {
 const (
 	StLibPartial   = "partial"   // il manque des fichiers de la release
 	StLibDifferent = "different" // mêmes tailles, autres données
+	// StLibComplete : il ne manque que des petits fichiers annexes (.nfo,
+	// image, texte, sous-titre), que le client peut télécharger avant de
+	// seeder (MiTor, 23/10/26).
+	StLibComplete = "completable"
 )
+
+// Fichiers annexes qu'une release « À compléter » peut télécharger.
+var sideFileExt = map[string]bool{".nfo": true, ".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true, ".txt": true, ".sfv": true, ".md5": true, ".url": true, ".srt": true, ".ass": true, ".ssa": true, ".sub": true, ".idx": true}
+
+// À compléter : 20 Mio de fichiers annexes au plus, et 64 Mio de morceaux à
+// télécharger au plus (un morceau qui touche un .nfo se télécharge en entier).
+const (
+	libCompleteMaxFiles  = 20 << 20
+	libCompleteMaxPieces = 64 << 20
+)
+
+// completable : les fichiers manquants ne sont que des annexes, et ce que le
+// client devra télécharger reste petit. Renvoie les octets à télécharger et
+// la vérification attendue (en fraction du total).
+func completable(t *torrent.Torrent, missing []torrent.File) (int64, float64, bool) {
+	var size int64
+	for _, f := range missing {
+		if !sideFileExt[strings.ToLower(path.Ext(f.Path))] {
+			return 0, 0, false
+		}
+		size += f.Size
+	}
+	if size > libCompleteMaxFiles || t.PieceLength <= 0 || t.Total <= 0 {
+		return 0, 0, false
+	}
+	pieces := map[int64]bool{}
+	for _, f := range missing {
+		if f.Size <= 0 {
+			continue
+		}
+		for i := f.Offset / t.PieceLength; i <= (f.Offset+f.Size-1)/t.PieceLength; i++ {
+			pieces[i] = true
+		}
+	}
+	var bytes int64
+	for i := range pieces {
+		bytes += min(t.PieceLength, t.Total-i*t.PieceLength)
+	}
+	if bytes > libCompleteMaxPieces || bytes >= t.Total {
+		return 0, 0, false
+	}
+	return bytes, 1 - float64(bytes)/float64(t.Total), true
+}
 
 type library struct {
 	io       LibraryIO
@@ -290,11 +343,12 @@ func (e *Engine) runLibrary(ctx context.Context, folders []config.LibFolder) err
 		}
 		r.raw, r.Files = raw, len(t.Files)
 		pairs, missing := libPairs(t, all, bySize)
-		if len(missing) > 0 {
+		for _, f := range missing {
+			r.Missing = append(r.Missing, f.Path)
+		}
+		dl, minP, canComplete := completable(t, missing)
+		if len(missing) > 0 && (!canComplete || len(pairs) == 0) {
 			r.Status = StLibPartial
-			for _, f := range missing {
-				r.Missing = append(r.Missing, f.Path)
-			}
 			r.Detail = fmt.Sprintf("%d fichier%s de la release introuvable%s dans ta médiathèque", len(missing), plural(len(missing)), plural(len(missing)))
 			continue
 		}
@@ -312,6 +366,9 @@ func (e *Engine) runLibrary(ctx context.Context, folders []config.LibFolder) err
 			r.Status, r.Detail = StError, "lecture impossible : "+err.Error()
 		case n < 0:
 			r.Status, r.Detail = StLibDifferent, "mêmes tailles, mais d'autres données : ce n'est pas la même release"
+		case len(missing) > 0:
+			r.Status, r.MissBytes, r.minProgress = StLibComplete, dl, minP
+			r.Detail = missingText(len(missing), "ton client peut %s télécharger (%s de morceaux), puis seeder", humanSize(dl))
 		default:
 			r.Status = StAdd
 			if n > 0 {
@@ -331,6 +388,27 @@ func (e *Engine) runLibrary(ctx context.Context, folders []config.LibFolder) err
 	e.touch()
 	e.mu.Unlock()
 	return nil
+}
+
+// missingText : « il ne manque qu'un petit fichier : ton client peut le
+// télécharger… », « il ne manque que 3 petits fichiers : … les … ».
+func missingText(n int, tail, size string) string {
+	if n == 1 {
+		return "il ne manque qu'un petit fichier : " + fmt.Sprintf(tail, "le", size)
+	}
+	return fmt.Sprintf("il ne manque que %d petits fichiers : ", n) + fmt.Sprintf(tail, "les", size)
+}
+
+// humanSize : « 4,2 Mio », « 512 Kio ».
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return strings.Replace(fmt.Sprintf("%.1f Gio", float64(n)/(1<<30)), ".", ",", 1)
+	case n >= 1<<20:
+		return strings.Replace(fmt.Sprintf("%.1f Mio", float64(n)/(1<<20)), ".", ",", 1)
+	default:
+		return fmt.Sprintf("%d Kio", max(1, n>>10))
+	}
 }
 
 func pluralX(n int) string {
@@ -478,7 +556,7 @@ func (e *Engine) LibraryRows() []LibRow {
 		c.raw, c.pairs = nil, nil
 		out = append(out, c)
 	}
-	rank := map[string]int{StAdd: 0, StQueued: 0, StChecking: 0, StFailed: 0, StSeeding: 1, StInClient: 1, StLibPartial: 2, StLibDifferent: 3, StError: 3}
+	rank := map[string]int{StAdd: 0, StQueued: 0, StChecking: 0, StFailed: 0, StSeeding: 1, StInClient: 1, StLibComplete: 2, StLibPartial: 2, StLibDifferent: 3, StError: 3}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if rank[a.Status] != rank[b.Status] {
@@ -502,7 +580,7 @@ func (e *Engine) ApplyLibrary(keys []string) (int, error) {
 	n := 0
 	for _, k := range keys {
 		r := e.lib.rows[k]
-		if r == nil || r.Status != StAdd {
+		if r == nil || (r.Status != StAdd && r.Status != StLibComplete) {
 			continue
 		}
 		r.Status, r.Detail = StQueued, ""
@@ -565,9 +643,14 @@ func (e *Engine) runLibQueue(ctx context.Context) {
 // membre les a choisis (la médiathèque n'est pas touchée), sinon renommage
 // dans le client (rien ne bouge sur le disque).
 func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
+	// Rien n'a été fait : la ligne reste ajoutable (ou à compléter).
+	again := StAdd
+	if r.minProgress > 0 {
+		again = StLibComplete
+	}
 	env, err := e.clients()
 	if err != nil {
-		return StAdd, err.Error()
+		return again, err.Error()
 	}
 	cfg := env.Cfg
 	id := cfg.LibraryClient
@@ -576,7 +659,7 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 	}
 	tg := env.Get(id)
 	if tg == nil {
-		return StAdd, env.Unreachable(id).Error()
+		return again, env.Unreachable(id).Error()
 	}
 	q := tg.Client
 	e.mu.Lock()
@@ -584,12 +667,24 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 	e.mu.Unlock()
 	all, err := q.List(ctx, nil)
 	if err != nil {
-		return StAdd, err.Error()
+		return again, err.Error()
 	}
 	// Chemins vus par le client.
 	cps := make([]string, len(r.pairs))
 	for i, p := range r.pairs {
 		cps[i] = io.ClientPath(r.Source, p.local.Path, tg.PathMap)
+	}
+	// À compléter : seulement dans le dossier de liens, et avec des liens
+	// physiques. Le client y écrit les fichiers manquants, et réécrit à
+	// l'identique les octets des morceaux qu'ils partagent avec tes fichiers :
+	// un lien symbolique vers un partage en lecture seule le refuserait.
+	if r.minProgress > 0 {
+		if e.linkerFor(cfg, *tg) == nil {
+			return again, "compléter demande le dossier de liens (Réglages) : les fichiers manquants y sont téléchargés, ta médiathèque n'est pas touchée"
+		}
+		if cfg.Links.Symbolic {
+			return again, "compléter n'est pas possible avec des liens symboliques : le client doit pouvoir écrire les morceaux qui touchent tes fichiers"
+		}
 	}
 	if link := e.linkerFor(cfg, *tg); link != nil {
 		dir := strings.TrimSpace(tg.LinksDir)
@@ -603,12 +698,12 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 			target := clientJoin(dir, root)
 			for _, x := range all {
 				if under(x.ContentPath, target) || under(target, x.ContentPath) {
-					return StAdd, "« " + root + " » est déjà l'emplacement d'un torrent dans ton dossier de liens"
+					return again, "« " + root + " » est déjà l'emplacement d'un torrent dans ton dossier de liens"
 				}
 			}
 		}
 		if err := link(ctx, tg.PathMap, dir, lp, false); err != nil {
-			return StAdd, "liens : " + err.Error()
+			return again, "liens : " + err.Error()
 		}
 		hash, err := e.AddAndVerify(ctx, *tg, cfg, r.Key, r.Match.ID, r.raw, dir)
 		if err != nil {
@@ -619,18 +714,22 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 			case errors.Is(err, ErrInClient):
 				return StInClient, ""
 			case hash == "":
-				return StAdd, err.Error()
+				return again, err.Error()
 			}
 			return StFailed, err.Error()
+		}
+		if r.minProgress > 0 {
+			e.allowMissing(hash, r.minProgress)
+			return StChecking, fmt.Sprintf("liens dans « %s » : après la vérification, le client télécharge %s, puis seede", dir, map[bool]string{true: "le petit fichier manquant", false: fmt.Sprintf("les %d petits fichiers manquants", len(r.Missing))}[len(r.Missing) == 1])
 		}
 		return StChecking, fmt.Sprintf("liens dans « %s » : ta médiathèque n'est pas touchée", dir)
 	}
 	if !q.CanRename() {
-		return StAdd, q.Kind() + " ne sait pas renommer les fichiers d'un torrent : active les liens dans les réglages"
+		return again, q.Kind() + " ne sait pas renommer les fichiers d'un torrent : active les liens dans les réglages"
 	}
 	save := clientCommonDir(cps)
 	if save == "" {
-		return StAdd, "fichiers dans des dossiers sans parent commun"
+		return again, "fichiers dans des dossiers sans parent commun"
 	}
 	pairs := make([]client.Rename, len(r.pairs))
 	var local []torrent.File
@@ -640,7 +739,7 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 		local = append(local, torrent.File{Path: rel, Size: p.v.Size, Index: i})
 	}
 	if err := renameSafe(pairs, local, save, "", all, diskLookup(ctx, q, save, tg.PathMap)); err != nil {
-		return StAdd, err.Error() + " (ou active les liens dans les réglages, symboliques pour un partage en lecture seule)"
+		return again, err.Error() + " (ou active les liens dans les réglages, symboliques pour un partage en lecture seule)"
 	}
 	hash, n, err := e.addAndRename(ctx, *tg, cfg, r.Key, r.Match.ID, r.raw, save, pairs)
 	if err != nil {
@@ -648,7 +747,7 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 		case errors.Is(err, ErrInClient):
 			return StInClient, ""
 		case hash == "":
-			return StAdd, err.Error()
+			return again, err.Error()
 		}
 		return StFailed, err.Error()
 	}

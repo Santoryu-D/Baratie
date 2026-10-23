@@ -296,3 +296,128 @@ func TestNoneCopiesMerged(t *testing.T) {
 		t.Fatalf("attendu une ligne « Pas sur V3X » à 3 copies : %+v", got)
 	}
 }
+
+// Ori de Nayr, 23/10/26 : un .iso seul rangé dans un dossier, et une empreinte
+// en cache d'une version d'avant (sans le plus gros fichier). D3X prenait le
+// nom du dossier pour celui du fichier (extension « .wisps-mephisto ») et ne
+// rapprochait rien ; le .torrent se relit et l'image disque est reconnue.
+func TestSameFileISOAloneInFolder(t *testing.T) {
+	isolatedConfig(t)
+	const name = "Ori.and.the.Will.of.the.Wisps-Mephisto"
+	const iso = int64(400_000_000)
+	raw := mkTorrent(name, map[string]int64{name + "/" + name + ".iso": iso}, "https://autre.invalid/announce", "AUTRE")
+	p, _ := torrent.Parse(raw)
+	h := strings.ToLower(p.InfoHash)
+	// Empreinte d'une version d'avant : ni Big, ni BigExt, ni BigName.
+	saveSigCache(map[string]Sig{h: {InfoHash: h, Name: p.Name, ContentHash: p.ContentHash, SizeHash: p.SizeHash, Total: p.Total, Real: p.Total, Files: 1}})
+	fq := &fakeQbit{list: map[string]*fakeTorrent{}, complete: map[string]float64{}}
+	fq.list[h] = &fakeTorrent{Torrent: qbit.Torrent{
+		Hash: h, Name: p.Name, SavePath: "/data", ContentPath: "/data/" + p.Name, Progress: 1, State: "stalledUP",
+		Size: p.Total, TotalSize: p.Total, MagnetURI: "magnet:?xt=urn:btih:" + h + "&tr=https%3A%2F%2Fautre.invalid%2Fannounce",
+	}, raw: raw}
+	qs := httptest.NewServer(fq.handler(t))
+	defer qs.Close()
+	vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/me":
+			io.WriteString(w, `{"username":"test","ratio":2.5,"hitAndRun":0}`)
+		case "/api/d3x/match":
+			io.WriteString(w, `{"results":[]}`)
+		case "/api/d3x/match-files":
+			json.NewEncoder(w).Encode(map[string]interface{}{"matches": map[string][]v3x.FileMatch{
+				"400000000": {{ID: "66666666-6666-4666-8666-666666666666", Name: name, File: name + ".iso", InfoHash: strings.Repeat("cd", 20), Size: iso + 8_774, FileCount: 2, Seeders: 4}},
+			}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vs.Close()
+	q, _ := client.New(client.Options{URL: qs.URL, User: "admin", Pass: "secret"})
+	e := New(oneClient(q, v3x.New(vs.URL, "cle", "D3X/test"), config.Defaults()))
+	if err := e.StartScan(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return !e.Scanning() })
+	for _, r := range e.Rows() {
+		if r.Name != name {
+			continue
+		}
+		if r.Status != StSameVideo || r.Match == nil || r.Match.Kind != "same_file" {
+			t.Fatalf("%s (%s) %+v, attendu Même fichier sur V3X", r.Status, r.Detail, r.Match)
+		}
+		return
+	}
+	t.Fatalf("ligne absente : %+v", e.Rows())
+}
+
+func TestLooksLikeFileExt(t *testing.T) {
+	for ext, want := range map[string]bool{".mkv": true, ".iso": true, ".epub": true, ".wisps-mephisto": false, ".x264": false, ".h265-grp": false, ".1080p": false} {
+		if got := looksLikeFileExt(ext); got != want {
+			t.Errorf("%s : %v, attendu %v", ext, got, want)
+		}
+	}
+}
+
+// Livre de Luci, 23/10/26 : un .epub dont le nom ne diffère de la fiche que par
+// les majuscules. Rapproché par les tailles seules, il n'est gardé qu'au même
+// nom à la casse près ; un autre livre de même taille reste « Pas sur V3X ».
+func TestSmallRenamedNameCheck(t *testing.T) {
+	for _, tc := range []struct{ v3xName, want string }{
+		{"Charles Bukowski - Contes de la folie ordinaire.epub", StRenamed},
+		{"Un Autre Livre.epub", StNone},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			isolatedConfig(t)
+			const local = "Charles Bukowski - Contes de la Folie Ordinaire.epub"
+			raw := mkTorrent(local, map[string]int64{local: 212_666}, "https://autre.invalid/announce", "AUTRE")
+			p, _ := torrent.Parse(raw)
+			h := strings.ToLower(p.InfoHash)
+			fq := &fakeQbit{list: map[string]*fakeTorrent{}, complete: map[string]float64{}}
+			fq.list[h] = &fakeTorrent{Torrent: qbit.Torrent{
+				Hash: h, Name: p.Name, SavePath: "/data", ContentPath: "/data/" + p.Name, Progress: 1, State: "stalledUP",
+				Size: p.Total, TotalSize: p.Total, MagnetURI: "magnet:?xt=urn:btih:" + h + "&tr=https%3A%2F%2Fautre.invalid%2Fannounce",
+			}, raw: raw}
+			qs := httptest.NewServer(fq.handler(t))
+			defer qs.Close()
+			asked := false
+			vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/me":
+					io.WriteString(w, `{"username":"test","ratio":2.5,"hitAndRun":0}`)
+				case "/api/d3x/match":
+					var in struct {
+						Items      []struct{ Key string }
+						SmallNames bool
+					}
+					json.NewDecoder(r.Body).Decode(&in)
+					asked = in.SmallNames
+					json.NewEncoder(w).Encode(map[string]interface{}{"results": []map[string]interface{}{{"key": in.Items[0].Key, "match": map[string]interface{}{
+						"kind": "renamed", "id": "77777777-7777-4777-8777-777777777777", "name": tc.v3xName, "infoHash": strings.Repeat("ef", 20), "seeders": 8, "size": 212_666, "nameCheck": true,
+					}}}})
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer vs.Close()
+			q, _ := client.New(client.Options{URL: qs.URL, User: "admin", Pass: "secret"})
+			e := New(oneClient(q, v3x.New(vs.URL, "cle", "D3X/test"), config.Defaults()))
+			if err := e.StartScan(); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, func() bool { return !e.Scanning() })
+			if !asked {
+				t.Fatal("smallNames non demandé au site")
+			}
+			for _, r := range e.Rows() {
+				if r.Name != local {
+					continue
+				}
+				if r.Status != tc.want {
+					t.Fatalf("%s (%s), attendu %s", r.Status, r.Detail, tc.want)
+				}
+				return
+			}
+			t.Fatalf("ligne absente : %+v", e.Rows())
+		})
+	}
+}

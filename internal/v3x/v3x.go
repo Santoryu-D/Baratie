@@ -247,6 +247,10 @@ type Match struct {
 	// Gone (Kind « gone ») : aucune fiche en ligne, mais une fiche du même
 	// contenu a été retirée, remplacée ou archivée (issue GitHub #1, peplade).
 	Gone *Gone `json:"gone,omitempty"`
+	// NameCheck : petite release rapprochée par les tailles seules (1.1.29) ;
+	// D3X ne la garde que si le nom est le même, à la casse et à la
+	// ponctuation près.
+	NameCheck bool `json:"nameCheck,omitempty"`
 }
 
 // Gone : la fiche V3X retirée d'un contenu. Reason n'est donnée qu'à son
@@ -287,7 +291,7 @@ func (c *Client) MatchBatch(ctx context.Context, r *Retry, items []MatchItem) (m
 		} `json:"results"`
 		ReseedPrime int `json:"reseedPrime"`
 	}
-	if err := c.doJSON(ctx, r, http.MethodPost, "/api/d3x/match", map[string]interface{}{"items": items}, &res); err != nil {
+	if err := c.doJSON(ctx, r, http.MethodPost, "/api/d3x/match", map[string]interface{}{"items": items, "smallNames": true}, &res); err != nil {
 		return nil, err
 	}
 	out := make(map[string]*Match, len(res.Results))

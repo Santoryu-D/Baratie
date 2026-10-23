@@ -329,8 +329,21 @@ func (e *Engine) step(ctx context.Context, q client.Client, h string, byHash map
 			return
 		}
 		stable := time.Since(w.EndAt) >= endStable
+		minP := w.MinProgress
 		e.mu.Unlock()
 		if !stable {
+			return
+		}
+		// Release à compléter : ce qui manque n'est que les morceaux des petits
+		// fichiers annexes, le client les télécharge puis seede (MiTor).
+		if minP > 0 && t.Progress+1e-6 >= minP {
+			if err := q.Start(ctx, h); err != nil {
+				set(StChecking, "vérifié à "+pct(t.Progress)+", démarrage refusé : "+err.Error())
+				return
+			}
+			set(StSeeding, "vérifié à "+pct(t.Progress)+" : les petits fichiers manquants se téléchargent, puis il seede")
+			journal.Add(journal.Event{Kind: "crossseed", Name: w.Name, InfoHash: h, ID: w.ID, Detail: w.Detail})
+			e.forget(h)
 			return
 		}
 		set(StFailed, "vérifié à "+pct(t.Progress)+" : tes fichiers diffèrent de la release V3X, le torrent reste arrêté")
@@ -475,6 +488,18 @@ type WatchState struct {
 // client clientID et dont la vérification est lancée : il sera démarré à
 // 100 %, laissé arrêté sinon. Sert aussi à la publication (seed de sa propre
 // release).
+// allowMissing : cet ajout démarre aussi sous 100 %, dès que sa vérification
+// atteint min (release de la médiathèque à compléter : le client télécharge
+// ensuite les petits fichiers manquants).
+func (e *Engine) allowMissing(hash string, min float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if w := e.watches[strings.ToLower(hash)]; w != nil {
+		w.MinProgress = min
+		e.saveWatchesLocked()
+	}
+}
+
 func (e *Engine) Watch(clientID, key, name, id, hash string) {
 	hash = strings.ToLower(hash)
 	e.mu.Lock()

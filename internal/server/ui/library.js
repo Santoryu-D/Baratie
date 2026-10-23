@@ -9,7 +9,7 @@ const libView = { data: null, tab: "add", selected: new Set(), source: "local", 
 const LIB_TABS = [
   { id: "add", label: "À ajouter", statuses: ["add", "queued", "checking", "failed"], empty: "Rien à ajouter pour l'instant : lance une analyse." },
   { id: "done", label: "En seed", statuses: ["seeding", "in_client"], empty: "" },
-  { id: "partial", label: "Incomplètes", statuses: ["partial"], empty: "", note: "Il manque des fichiers de la release V3X dans ta médiathèque (souvent un petit .nfo ou un sous-titre) : ton client ne pourrait pas la vérifier à 100 %." },
+  { id: "partial", label: "Incomplètes", statuses: ["completable", "partial"], empty: "", note: "Il manque des fichiers de la release V3X dans ta médiathèque. « À compléter » : il ne manque que des petits fichiers annexes (.nfo, image, texte, sous-titre) ; coche-les et ajoute-les, ton client les télécharge dans ton dossier de liens, puis seede. Il faut le dossier de liens, avec des liens physiques (Réglages)." },
   { id: "other", label: "Autres", statuses: ["different", "error", "removed"], empty: "", note: "Mêmes tailles que des fichiers de ta médiathèque, mais pas les mêmes données (ou illisibles) : D3X ne les propose pas." },
 ];
 
@@ -21,6 +21,7 @@ const LIB_STATUS = {
   seeding: ["Ajouté, en seed", "ok"],
   in_client: ["Déjà dans le client", "ok"],
   partial: ["Incomplète", ""],
+  completable: ["À compléter", "warn"],
   different: ["Autres données", "bad"],
   error: ["Illisible", "bad"],
   removed: ["Retiré du client", ""],
@@ -213,7 +214,7 @@ function libRender() {
   const empty = $("#lib-empty");
   empty.textContent = list.length ? tab.note || "" : p === "done" && tab.id === "add" ? "Aucune release de V3X trouvée dans ces dossiers (hors celles que ton client seede déjà)." : tab.empty;
   empty.classList.toggle("hidden", !empty.textContent);
-  const addable = list.filter((r) => r.status === "add");
+  const addable = list.filter((r) => r.status === "add" || r.status === "completable");
   const all = $("#lib-all");
   all.disabled = addable.length === 0;
   all.checked = addable.length > 0 && addable.every((r) => libView.selected.has(r.key));
@@ -223,7 +224,7 @@ function libRender() {
 function libRow(r) {
   const tr = el("tr");
   const td = el("td", "c-check");
-  if (r.status === "add") {
+  if (r.status === "add" || r.status === "completable") {
     const cb = el("input");
     cb.type = "checkbox";
     cb.checked = libView.selected.has(r.key);
@@ -289,7 +290,7 @@ async function libApply() {
   try {
     const r = await api("/ui/library/apply", { keys });
     libView.selected.clear();
-    toast(r.queued + " " + plural(r.queued, "release mise", "releases mises") + " en file. Ton client les vérifie une par une.", "ok");
+    toast(r.queued + " " + plural(r.queued, "release mise", "releases mises") + " en file. Ton client les vérifie une par une" + (libView.tab === "partial" ? ", puis télécharge les petits fichiers manquants." : "."), "ok");
     await libLoad();
     libPoll();
   } catch (e) {
@@ -336,7 +337,7 @@ function bindLibrary() {
   });
   $("#lib-all").addEventListener("change", (ev) => {
     for (const r of (libView.data && libView.data.rows) || []) {
-      if (r.status !== "add" || libTabOf(r.status).id !== libView.tab) continue;
+      if ((r.status !== "add" && r.status !== "completable") || libTabOf(r.status).id !== libView.tab) continue;
       if (ev.target.checked) libView.selected.add(r.key);
       else libView.selected.delete(r.key);
     }
