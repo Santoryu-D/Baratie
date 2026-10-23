@@ -11,6 +11,7 @@ L'outil de bureau des membres de [V3X](https://v3x.club).
 - **Publier** : tu choisis un dossier ou un fichier, sur ce PC ou sur ta seedbox, D3X fabrique le .torrent là où sont les fichiers pendant que tu remplis la fiche, que V3X prépare exactement comme sur sa page d'upload. Une fois publiée, la release part en seed dans ton client, sur les mêmes fichiers.
 - **Musique** : D3X lit les tags et la qualité des pistes, retrouve l'album dans MusicBrainz en comparant les durées, et prépare la fiche album du site.
 - **Jeux vidéo** : dans Jeux vidéo ou Émulation, tu cherches le jeu par son titre ; titre, jaquette et fiche jeu du site (genres, studios, config requise) se remplissent, comme sur la page d'upload.
+- **Livres** : dans Ebook (ou pour une release faite de .epub, .pdf…), le lien Open Library du livre ou son ISBN remplit titre, auteur, couverture et fiche livre, comme sur la page d'upload.
 - **Lot** : un dossier entier passé au crible. D3X ne publie seul que ce qui est sûr ; le reste attend ta revue.
 
 Clients pris en charge : **qBittorrent**, **Transmission**, **Deluge** et **rTorrent** (ruTorrent), sur ce PC, un NAS ou une seedbox, et [plusieurs à la fois](#plusieurs-clients) (une seedbox et ce PC, par exemple).
@@ -102,6 +103,7 @@ Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et
 ## Publier, en mieux
 
 - **Doublon repéré avant de hacher** : l'empreinte des noms et tailles suffit pour savoir si la release existe déjà sur V3X, sans passer dix minutes à hacher 50 Gio pour rien. Si elle y est à l'identique, « Seeder la release V3X avec ces fichiers » l'ajoute à ton client à l'arrêt, la fait vérifier et la démarre à 100 %, sans rien publier.
+- **Déjà sur V3X** : les versions du même film, du même épisode ou du même livre déjà en ligne, avec leur taille ; celle qui a presque la même taille que la tienne est signalée, et un REPACK (ou PROPER) de ta release passe en tête. Dans le Lot, la version d'origine d'une release dont le REPACK est en ligne attend dans « À vérifier ». Rien n'est bloqué dans Publier : c'est toi qui décides.
 - **Hachage sur tous les cœurs**, mémoire bornée, et un cache : une release déjà hachée ne l'est plus jamais.
 - **MediaInfo sans rien installer** : la même bibliothèque que la page d'upload du site, calculée dans la page de D3X.
 - **La fiche est celle du site** : nom suggéré, catégorie, TMDB, NFO et présentation viennent du même générateur que la page d'upload de V3X. Éditeur avec barre d'outils et aperçu en direct.
@@ -226,6 +228,8 @@ Chaque version publie `checksums.txt` (l'empreinte SHA-256 de chaque fichier) et
 | Transmission | `http://127.0.0.1:9091` | Préférences ▸ Distant |
 | Deluge | `http://127.0.0.1:8112` | greffon WebUI (mot de passe seul) |
 | rTorrent | `https://ta-seedbox/RPC2` | XML-RPC, avec l'identification de la seedbox |
+
+Seedbox qui demande d'abord une identification du serveur (une fenêtre « identifiez-vous » avant même qBittorrent) : D3X y présente le pseudo et le mot de passe des champs du client. Inutile de les écrire dans l'adresse.
 
 Les réglages restent sur ta machine, lisibles par toi seul :
 

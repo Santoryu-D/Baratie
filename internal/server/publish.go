@@ -24,6 +24,7 @@ func (s *Server) routesPublish() {
 	s.mux.HandleFunc("GET /ui/pub/context", s.pubContext)
 	s.mux.HandleFunc("GET /ui/pub/tmdb/{kind}", s.pubTMDB)
 	s.mux.HandleFunc("GET /ui/pub/igdb/{kind}", s.pubIGDB)
+	s.mux.HandleFunc("GET /ui/pub/versions", s.pubVersions)
 	s.mux.HandleFunc("POST /ui/pub/preview", s.pubPreview)
 	s.mux.HandleFunc("POST /ui/pub/image", s.pubImage)
 	s.mux.HandleFunc("GET /ui/bbcode.css", s.pubCSS)
@@ -220,6 +221,25 @@ func (s *Server) pubIGDB(w http.ResponseWriter, r *http.Request) {
 	w.Write(raw)
 }
 
+// pubVersions relaie les versions déjà sur V3X du même contenu, et les REPACK
+// de la release (Nico31, Turias, quebecman, 23/10/26).
+func (s *Server) pubVersions(w http.ResponseWriter, r *http.Request) {
+	v, err := s.v3xClient()
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	raw, err := v.Versions(ctx, r.URL.Query())
+	if err != nil {
+		apiFail(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write(raw)
+}
+
 func (s *Server) pubFiche(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ReleaseName  string  `json:"releaseName"`
@@ -227,6 +247,7 @@ func (s *Server) pubFiche(w http.ResponseWriter, r *http.Request) {
 		TmdbRef      *string `json:"tmdbRef"`
 		MbRef        *string `json:"mbRef"`
 		IgdbID       *int64  `json:"igdbId"`
+		BookRef      *string `json:"bookRef"`
 		CategorySlug *string `json:"categorySlug"`
 		TemplateID   *string `json:"templateId"`
 	}
@@ -245,7 +266,7 @@ func (s *Server) pubFiche(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := v.Fiche(ctx, v3x.FicheRequest{ReleaseName: in.ReleaseName, MediaInfo: in.MediaInfo, TmdbRef: in.TmdbRef, MbRef: in.MbRef, IgdbID: in.IgdbID, Download: dl, CategorySlug: in.CategorySlug, TemplateID: in.TemplateID})
+	raw, err := v.Fiche(ctx, v3x.FicheRequest{ReleaseName: in.ReleaseName, MediaInfo: in.MediaInfo, TmdbRef: in.TmdbRef, MbRef: in.MbRef, IgdbID: in.IgdbID, BookRef: in.BookRef, Download: dl, CategorySlug: in.CategorySlug, TemplateID: in.TemplateID})
 	if err != nil {
 		apiFail(w, err)
 		return

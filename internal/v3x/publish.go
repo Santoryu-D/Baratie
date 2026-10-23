@@ -50,13 +50,28 @@ func (c *Client) IGDB(ctx context.Context, kind string, q url.Values) (json.RawM
 	return raw, err
 }
 
+// Versions relaie les versions déjà sur V3X du même contenu (name, tmdb,
+// size, category) et les REPACK de la release.
+func (c *Client) Versions(ctx context.Context, q url.Values) (json.RawMessage, error) {
+	clean := url.Values{}
+	for _, k := range []string{"name", "tmdb", "size", "category"} {
+		if v := q.Get(k); v != "" {
+			clean.Set(k, v)
+		}
+	}
+	var raw json.RawMessage
+	err := c.doJSON(ctx, nil, http.MethodGet, "/api/d3x/versions?"+clean.Encode(), nil, &raw)
+	return raw, err
+}
+
 // FicheRequest : de quoi bâtir la fiche.
 type FicheRequest struct {
 	ReleaseName  string        `json:"releaseName"`
 	MediaInfo    string        `json:"mediainfo"`
 	TmdbRef      *string       `json:"tmdbRef,omitempty"`
-	MbRef        *string       `json:"mbRef,omitempty"`  // édition MusicBrainz (musique)
-	IgdbID       *int64        `json:"igdbId,omitempty"` // jeu vidéo choisi dans la recherche
+	MbRef        *string       `json:"mbRef,omitempty"`   // édition MusicBrainz (musique)
+	IgdbID       *int64        `json:"igdbId,omitempty"`  // jeu vidéo choisi dans la recherche
+	BookRef      *string       `json:"bookRef,omitempty"` // livre : lien Open Library ou ISBN
 	Download     FicheDownload `json:"download"`
 	CategorySlug *string       `json:"categorySlug,omitempty"`
 	TemplateID   *string       `json:"templateId,omitempty"`

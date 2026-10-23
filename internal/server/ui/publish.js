@@ -17,6 +17,8 @@ const pub = {
   miState: "idle", // idle, running, done, none, error
   tmdb: null, // { type, id, title, year, posterUrl }
   game: null, // jeu vidéo choisi : { id, name, year, coverUrl }
+  book: null, // livre : { ref } (lien Open Library ou ISBN)
+  versionsKey: "", // dernière demande des versions déjà sur V3X
   dirty: {}, // champs retouchés par le membre : jamais écrasés par la fiche
   ficheSeq: 0,
   previewSeq: 0,
@@ -156,6 +158,8 @@ const WARNINGS = {
   tmdb_not_found: "Cette fiche TMDB est introuvable.",
   mb_not_found: "Cette édition MusicBrainz est introuvable.",
   igdb_not_found: "Ce jeu est introuvable dans la base des jeux vidéo.",
+  book_not_found: "Ce livre est introuvable : vérifie le lien ou l'ISBN.",
+  book_invalid_ref: "Ce n'est ni un lien Open Library (œuvre ou édition) ni un ISBN.",
   audio_naming: "Le nom d'une release musicale doit suivre le nommage du site.",
   category_unknown: "Catégorie inconnue sur V3X.",
 };
@@ -436,14 +440,19 @@ function resetForm() {
   pub.miState = "idle";
   pub.tmdb = null;
   pub.game = null;
+  pub.book = null;
+  pub.versionsKey = "";
   pub.keptPoster = "";
   pub.localNfo = "";
   pub.dirty = {};
-  for (const id of ["#f-name", "#f-title", "#f-season", "#f-desc", "#f-nfo", "#f-vt", "#tmdb-q", "#game-q"]) $(id).value = "";
+  for (const id of ["#f-name", "#f-title", "#f-season", "#f-desc", "#f-nfo", "#f-vt", "#tmdb-q", "#game-q", "#book-q"]) $(id).value = "";
   $("#game-results").replaceChildren();
   $("#game-picked").classList.add("hidden");
   $("#game-state").textContent = "";
   $("#game-field").classList.add("hidden");
+  $("#book-picked").classList.add("hidden");
+  $("#book-field").classList.add("hidden");
+  $("#versions").classList.add("hidden");
   $("#f-notmdb").checked = false;
   $("#f-excl").checked = false;
   $("#f-team").checked = false;
@@ -701,12 +710,15 @@ async function loadFiche(force) {
       tmdbRef: pub.tmdb && !isGame() ? pub.tmdb.type + "/" + pub.tmdb.id : null,
       mbRef: pub.mb ? mbURL(pub.mb) : null,
       igdbId: isGame() && pub.game ? pub.game.id : null,
+      bookRef: isBook() && pub.book ? pub.book.ref : null,
       categorySlug: leaf ? leaf.slug : null,
       templateId: $("#f-tpl").value || null,
     });
     if (seq !== pub.ficheSeq) return;
     pub.fiche = f;
     applyFiche(f, force);
+    renderBook(f);
+    versionsSoon();
     $("#fiche-state").textContent = "";
   } catch (e) {
     if (seq !== pub.ficheSeq || e.message === "session") return;
@@ -872,8 +884,9 @@ function renderTmdbPicked() {
 // l'entrée dans ces catégories, elle part du nom de la release.
 function gameSetup() {
   const on = isGame();
-  $("#tmdb-field").classList.toggle("hidden", isAlbum() || on);
+  $("#tmdb-field").classList.toggle("hidden", isAlbum() || on || isBook());
   $("#game-field").classList.toggle("hidden", !on);
+  $("#book-field").classList.toggle("hidden", !isBook());
   if (!on || pub.game || $("#game-q").value.trim()) return;
   const q = (pub.fiche && pub.fiche.tmdbQuery) || (pub.job ? stripExt(pub.job.name, pub.job.single) : "");
   if (!q) return;
@@ -951,6 +964,132 @@ function pickGame(it) {
 function gamePoster() {
   const g = pub.fiche && pub.fiche.game;
   return isGame() && pub.game && g && g.id === pub.game.id && g.posterUrl ? g.posterUrl : "";
+}
+
+// ---------- livres (calcifer, 23/10/26) ----------
+
+// Dans Ebook : un lien Open Library (œuvre, édition) ou un ISBN donne titre,
+// auteur, couverture et fiche livre, comme le même lien collé sur le site.
+// Sans catégorie choisie, une release faite de livres (.epub, .pdf…) aussi :
+// le livre trouvé range la fiche dans Ebook ▸ Livres.
+function isBook() {
+  const r = $("#f-root").value;
+  if (r) return r === "ebook";
+  const files = (pub.job && pub.job.files) || [];
+  return files.length > 0 && files.every((f) => /\.(epub|pdf|mobi|azw3?|fb2|djvu|cbz|cbr|nfo|txt|jpe?g|png)$/i.test(f.rel || "")) && files.some((f) => /\.(epub|pdf|mobi|azw3?|fb2|djvu)$/i.test(f.rel || ""));
+}
+
+function useBook() {
+  const ref = $("#book-q").value.trim();
+  if (!ref) return;
+  pub.book = { ref };
+  $("#book-state").textContent = "Lecture du livre…";
+  loadFiche();
+}
+
+// Le livre lu par V3X (fiche reçue), ou le refus du lien.
+function renderBook(f) {
+  const p = $("#book-picked");
+  if (!pub.book) {
+    p.classList.add("hidden");
+    return;
+  }
+  const w = (f.warnings || []).find((x) => x === "book_not_found" || x === "book_invalid_ref");
+  if (w || !f.book) {
+    p.classList.add("hidden");
+    $("#book-state").textContent = WARNINGS[w] || "Ce livre est introuvable.";
+    return;
+  }
+  const b = f.book;
+  p.replaceChildren(gameCover(b.posterUrl));
+  const t = el("div");
+  t.append(el("b", null, b.title), el("div", "muted small", [b.author, b.year].filter(Boolean).join(" · ")));
+  const ch = el("button", "link", "Changer");
+  ch.type = "button";
+  ch.addEventListener("click", () => {
+    pub.book = null;
+    p.classList.add("hidden");
+    $("#book-q").focus();
+    loadFicheSoon();
+  });
+  t.append(ch);
+  p.append(t);
+  p.classList.remove("hidden");
+  $("#book-state").textContent = "";
+}
+
+// ---------- versions déjà sur V3X (Nico31, Turias, quebecman, 23/10/26) ----------
+
+// Les versions du même film, du même épisode ou du même livre, avec leur
+// taille, et le REPACK de cette release s'il est déjà là. Rien n'est bloqué :
+// c'est l'uploadeur qui décide.
+let versionsTimer = null;
+function versionsSoon() {
+  clearTimeout(versionsTimer);
+  versionsTimer = setTimeout(loadVersions, 600);
+}
+
+async function loadVersions() {
+  const j = pub.job;
+  const box = $("#versions");
+  if (!j || j.seedOnly) {
+    box.classList.add("hidden");
+    return;
+  }
+  const leaf = currentCategory();
+  const q = new URLSearchParams({ name: $("#f-name").value.trim() || stripExt(j.name, j.single), size: String(j.total || 0) });
+  if (pub.tmdb && !isGame() && !isBook() && !isAlbum()) q.set("tmdb", pub.tmdb.type + "/" + pub.tmdb.id);
+  if (leaf) q.set("category", leaf.slug);
+  else if ($("#f-root").value) q.set("category", $("#f-root").value);
+  const key = q.toString();
+  if (key === pub.versionsKey) return;
+  pub.versionsKey = key;
+  let r;
+  try {
+    r = await api("/ui/pub/versions?" + key);
+  } catch (e) {
+    if (pub.versionsKey === key) pub.versionsKey = "";
+    return;
+  }
+  if (pub.versionsKey !== key || pub.job !== j) return;
+  renderVersions(r, j);
+}
+
+function renderVersions(r, j) {
+  const box = $("#versions");
+  const list = (r.versions || []).filter((v) => !(j.duplicate && v.id === j.duplicate.id));
+  const redo = (r.redo || []).filter((v) => !(j.duplicate && v.id === j.duplicate.id));
+  box.classList.toggle("hidden", list.length === 0 && redo.length === 0);
+  const warn = $("#versions-redo");
+  warn.classList.toggle("hidden", redo.length === 0);
+  if (redo.length) {
+    const top = redo[0];
+    warn.replaceChildren(document.createTextNode("Un REPACK de ta release est déjà sur V3X : "));
+    const a = el("a", null, top.name);
+    a.href = "https://v3x.club/torrents/" + top.id;
+    a.target = "_blank";
+    a.rel = "noopener";
+    warn.append(a, document.createTextNode(" (" + fmtSize(top.size) + ", " + top.seeders + " " + plural(top.seeders, "source", "sources") + "). La version d'origine n'apporte rien de plus."));
+  }
+  const ul = $("#versions-list");
+  ul.replaceChildren();
+  for (const v of list.slice(0, 8)) {
+    const li = el("li", v.redo ? "redo" : null);
+    const a = el("a", null, v.name);
+    a.href = "https://v3x.club/torrents/" + v.id;
+    a.target = "_blank";
+    a.rel = "noopener";
+    li.append(a);
+    if (v.redo) li.append(el("span", "tag", "REPACK de ta release"));
+    else if (v.close) li.append(el("span", "tag", "presque la même taille"));
+    li.append(el("span", "num", fmtSize(v.size) + " · " + v.seeders + " " + plural(v.seeders, "source", "sources")));
+    ul.append(li);
+  }
+  const close = list.filter((v) => v.close && !v.redo).length;
+  $("#versions-hint").textContent =
+    (list.length > 8 ? "Et " + (list.length - 8) + " autre(s). " : "") +
+    (close ? "Une version de presque la même taille que la tienne (" + fmtSize(j.total) + ") est déjà là : la publier n'apporte peut-être pas grand-chose. " : "") +
+    "Deux fichiers différents ont le droit d'exister : c'est toi qui décides.";
 }
 
 // ---------- éditeur de présentation ----------
@@ -1214,6 +1353,10 @@ function fields() {
     f.tmdbUrl = mbURL(pub.mb);
     f.creator = (pub.fiche && pub.fiche.creator) || pub.mb.artist || "";
   }
+  // Livre : le lien ou l'ISBN, comme sur la page d'upload. Le site en tire
+  // l'auteur et la couverture (la première image de la présentation passe
+  // devant celle de l'ISBN, souvent petite).
+  if (isBook() && pub.book && pub.fiche && pub.fiche.book) f.tmdbUrl = pub.book.ref;
   if ($("#f-notmdb").checked) f.noTmdb = "true";
   const vt = $("#f-vt").value.trim();
   if (vt) f.virusTotalUrl = vt;
@@ -1388,9 +1531,11 @@ function bindPublish() {
   $("#tmdb-go").addEventListener("click", searchTmdb);
   $("#tmdb-q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchTmdb(); });
   $("#f-notmdb").addEventListener("change", () => { if ($("#f-notmdb").checked) { pub.tmdb = null; $("#tmdb-picked").classList.add("hidden"); loadFicheSoon(); } renderBar(); });
-  $("#f-root").addEventListener("change", () => { pub.dirty.category = true; fillLeaves($("#f-root").value, ""); gameSetup(); renderBar(); });
+  $("#f-root").addEventListener("change", () => { pub.dirty.category = true; fillLeaves($("#f-root").value, ""); gameSetup(); versionsSoon(); renderBar(); });
   $("#game-go").addEventListener("click", searchGame);
   $("#game-q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchGame(); });
+  $("#book-go").addEventListener("click", useBook);
+  $("#book-q").addEventListener("keydown", (e) => { if (e.key === "Enter") useBook(); });
   $("#f-leaf").addEventListener("change", () => { pub.dirty.category = true; loadFicheSoon(); renderBar(); });
   $("#f-vt").addEventListener("input", renderBar);
   $("#f-name").addEventListener("input", () => { pub.dirty.name = true; loadFicheSoon(); renderBar(); });

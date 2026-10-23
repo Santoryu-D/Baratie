@@ -268,6 +268,21 @@
           <p class="hint" id="game-state" aria-live="polite"></p>
           <ul class="tmdb-results" id="game-results"></ul>
         </div>
+        <div class="field span2 hidden" id="book-field">
+          <label for="book-q">Livre</label>
+          <div class="row">
+            <input type="text" id="book-q" autocomplete="off" spellcheck="false" placeholder="Lien Open Library ou ISBN">
+            <button class="btn small" id="book-go">Utiliser</button>
+          </div>
+          <div class="tmdb-picked hidden" id="book-picked"></div>
+          <p class="hint" id="book-state" aria-live="polite">Le lien de l'œuvre ou de l'édition, ou l'ISBN : titre, auteur, couverture et fiche du livre, comme sur le site.</p>
+        </div>
+        <div class="field span2 hidden" id="versions">
+          <label>Déjà sur V3X</label>
+          <div class="notice warn hidden" id="versions-redo"></div>
+          <ul class="versions" id="versions-list"></ul>
+          <p class="hint" id="versions-hint"></p>
+        </div>
         <div class="field">
           <label for="f-root">Catégorie</label>
           <div class="row"><select id="f-root" aria-label="Catégorie"></select><select id="f-leaf" aria-label="Sous-catégorie"></select></div>

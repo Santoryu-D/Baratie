@@ -468,6 +468,16 @@ async function processEntry(e, opts) {
     if (w === "audio_naming" && j.audio && j.audio.token) reasons.push("nom sans la qualité : « " + nameWithToken(name, j.audio.token) + " » ?");
     else reasons.push(WARNINGS[w].replace(/\.$/, ""));
   }
+  // REPACK (ou PROPER) de cette release déjà sur V3X (quebecman, 23/10/26) :
+  // la version d'origine ne part pas seule. Sans réponse du site, le lot continue.
+  try {
+    const q = new URLSearchParams({ name, size: String(j.total || 0) });
+    if (work && !album) q.set("tmdb", work.type + "/" + work.id);
+    if (cat) q.set("category", cat.slug);
+    const v = await api("/ui/pub/versions?" + q.toString());
+    const redo = (v.redo || [])[0];
+    if (redo) reasons.push("un REPACK de cette release est déjà sur V3X : « " + redo.name + " »");
+  } catch (err) { /* rien */ }
   if (reasons.length) {
     await cancel();
     return decide(e, "review", reasons.join(" · "));

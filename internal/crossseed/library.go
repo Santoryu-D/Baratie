@@ -462,7 +462,18 @@ func libPairs(t *torrent.Torrent, all []libLocal, bySize map[int64][]int) ([]lib
 // Chemins vus par D3X : Windows (« \ ») ou Unix.
 func slash(p string) string { return strings.ReplaceAll(p, `\`, "/") }
 
-func dirOf(p string) string { return path.Dir(slash(p)) }
+func dirOf(p string) string { return pathDir(slash(p)) }
+
+// pathDir : path.Dir qui garde le « // » de tête d'un chemin réseau Windows
+// (« \\serveur\partage\… ») : path.Dir le réduit à « / ». Le dossier devenait
+// « \serveur\… » et le nom du fichier, un chemin complet que qBittorrent
+// refusait (HTTP 409, médiathèque d'odeuxcool, 22/10/26).
+func pathDir(s string) string {
+	if strings.HasPrefix(s, "//") && !strings.HasPrefix(s, "///") {
+		return "/" + path.Dir(s[1:])
+	}
+	return path.Dir(s)
+}
 
 func baseName(p string) string { return path.Base(slash(p)) }
 
@@ -475,8 +486,12 @@ func commonDir(pairs []libPair) string {
 	}
 	d := dirOf(pairs[0].local.Path)
 	for _, p := range pairs[1:] {
-		for !strings.HasPrefix(strings.ToLower(slash(p.local.Path)), strings.ToLower(d)+"/") && d != "/" && d != "." && d != "" {
-			d = path.Dir(d)
+		for !strings.HasPrefix(strings.ToLower(slash(p.local.Path)), strings.ToLower(d)+"/") {
+			nd := pathDir(d)
+			if nd == d {
+				break
+			}
+			d = nd
 		}
 	}
 	if strings.Contains(pairs[0].local.Path, `\`) {
@@ -763,7 +778,7 @@ func clientCommonDir(ps []string) string {
 	d := dirOf(ps[0])
 	for _, p := range ps[1:] {
 		for !strings.HasPrefix(slash(p), d+"/") {
-			nd := path.Dir(d)
+			nd := pathDir(d)
 			if nd == d {
 				return ""
 			}

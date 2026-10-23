@@ -190,7 +190,9 @@ function libRender() {
     : "Ajout en renommant dans ton client : rien ne bouge sur le disque, mais le torrent pointera sur les fichiers de ta médiathèque. Ne le supprime jamais « avec ses fichiers ». Les liens (Réglages) évitent ça.";
 
   const rows = d.rows || [];
-  const keys = new Set(rows.filter((r) => r.status === "add").map((r) => r.key));
+  // Les releases « À compléter » se cochent aussi : sans elles ici, chaque
+  // rafraîchissement les décochait (MiTor, 23/10/26).
+  const keys = new Set(rows.filter((r) => r.status === "add" || r.status === "completable").map((r) => r.key));
   for (const k of libView.selected) if (!keys.has(k)) libView.selected.delete(k);
   const counts = {};
   for (const r of rows) counts[libTabOf(r.status).id] = (counts[libTabOf(r.status).id] || 0) + 1;

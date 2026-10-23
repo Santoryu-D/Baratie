@@ -129,7 +129,7 @@ func New(o Options) (*Client, error) {
 		referer: strings.TrimRight(clean.String(), "/"),
 		user:    o.User,
 		pass:    o.Pass,
-		hc:      &http.Client{Jar: jar, Timeout: 2 * time.Minute, Transport: tr},
+		hc:      &http.Client{Jar: jar, Timeout: 2 * time.Minute, Transport: &basicAuth{next: tr, user: o.User, pass: o.Pass}},
 	}
 	return c, nil
 }
@@ -154,6 +154,11 @@ func (c *Client) login(ctx context.Context) error {
 	}
 	if resp.StatusCode == http.StatusForbidden && strings.Contains(strings.ToLower(text), "banned") {
 		return errors.New("qBittorrent a bloqué cette adresse après trop d'échecs de connexion : attends quelques minutes, puis vérifie le mot de passe")
+	}
+	// Identification du serveur (seedbox) refusée : D3X y a déjà présenté le
+	// pseudo et le mot de passe des champs (basicAuth).
+	if resp.StatusCode == http.StatusUnauthorized {
+		return errors.New("l'adresse demande d'abord une identification du serveur (la fenêtre « identifiez-vous » d'une seedbox) et refuse le pseudo et le mot de passe saisis : mets ceux que ton hébergeur t'a donnés dans les champs de ce client")
 	}
 	// Accès libre (adresse en liste blanche, « Contourner l'authentification ») :
 	// l'API répond sans cookie, on continue.

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -111,6 +112,7 @@ func (d *demoPub) handle(w http.ResponseWriter, r *http.Request) bool {
 			TmdbRef     *string `json:"tmdbRef"`
 			MbRef       *string `json:"mbRef"`
 			IgdbID      *int64  `json:"igdbId"`
+			BookRef     *string `json:"bookRef"`
 			Category    *string `json:"categorySlug"`
 			Download    struct {
 				Name      string `json:"name"`
@@ -151,8 +153,21 @@ func (d *demoPub) handle(w http.ResponseWriter, r *http.Request) bool {
 			pres = "[center][size=6][b]" + title + "[/b][/size][/center]\n\n" + bbSection("Informations") + bbTable([][2]string{{"Genres", "Aventure, Stratégie"}, {"Développeur", "Studio Démo"}, {"Plateformes", "PC, PS5"}}) + "\n" + bbSection("Configuration requise") + "Système : Windows 10\nMémoire : 8 Go\n\n" + bbSection("Téléchargement") + bbTable([][2]string{{"Release", in.ReleaseName}, {"Taille", demoSize(in.Download.TotalSize)}, {"Fichiers", fmt.Sprint(in.Download.FileCount)}})
 			game = map[string]interface{}{"id": *in.IgdbID, "name": name, "year": y, "title": title, "posterUrl": nil}
 		}
+		// Livre : un ISBN de démonstration, tout le reste est « introuvable ».
+		var book interface{}
+		if in.BookRef != nil {
+			if strings.ReplaceAll(*in.BookRef, "-", "") == "9782070360024" {
+				title = "Albert Camus - L'Étranger (1942)"
+				pres = "[center][size=6][b]L'Étranger[/b][/size]\n[i]Albert Camus[/i][/center]\n\n" + bbSection("Synopsis") + "Aujourd'hui, maman est morte…\n\n" + bbSection("Informations") + bbTable([][2]string{{"Auteur", "Albert Camus"}, {"Année", "1942"}, {"ISBN", "9782070360024"}})
+				book = map[string]interface{}{"title": title, "bookTitle": "L'Étranger", "author": "Albert Camus", "year": "1942", "posterUrl": nil}
+				cat = map[string]interface{}{"id": 31, "slug": "ebook-livres"}
+			} else {
+				warnings = append(warnings, "book_not_found")
+			}
+		}
 		js(map[string]interface{}{
 			"game":          game,
+			"book":          book,
 			"analysis":      map[string]interface{}{"title": title, "tokens": []map[string]string{{"kind": "year", "value": year}, {"kind": "resolution", "value": "1080p"}, {"kind": "source", "value": "WEB"}, {"kind": "codec", "value": "H264"}, {"kind": "group", "value": "DEMO"}}, "warnings": []string{}, "score": 90},
 			"language":      "Multi (FR inclus)",
 			"season":        nil,
@@ -164,6 +179,25 @@ func (d *demoPub) handle(w http.ResponseWriter, r *http.Request) bool {
 			"nfo":           "Release de démonstration\n\n" + in.MediaInfo,
 			"presentation":  pres,
 			"warnings":      warnings,
+		})
+	case r.URL.Path == "/api/d3x/versions":
+		// Deux versions du même film, dont une de presque la même taille, et
+		// un REPACK de la release elle-même.
+		name := r.URL.Query().Get("name")
+		size, _ := strconv.ParseInt(r.URL.Query().Get("size"), 10, 64)
+		if r.URL.Query().Get("tmdb") == "" || size == 0 {
+			js(map[string]interface{}{"versions": []interface{}{}, "redo": []interface{}{}})
+			return true
+		}
+		repack := strings.Replace(name, ".1080p.", ".REPACK.1080p.", 1)
+		redo := map[string]interface{}{"id": "00000071-0000-4000-8000-000000000071", "name": repack, "size": size + 4096, "seeders": 6, "leechers": 1, "createdAt": "2026-10-20T10:00:00Z", "close": true, "redo": true}
+		js(map[string]interface{}{
+			"versions": []map[string]interface{}{
+				redo,
+				{"id": "00000072-0000-4000-8000-000000000072", "name": strings.Replace(name, "-DEMO", "-AUTRE", 1), "size": size * 102 / 100, "seeders": 12, "leechers": 0, "createdAt": "2026-09-12T10:00:00Z", "close": true, "redo": false},
+				{"id": "00000073-0000-4000-8000-000000000073", "name": strings.Replace(name, ".1080p.", ".2160p.", 1), "size": size * 4, "seeders": 3, "leechers": 2, "createdAt": "2026-08-30T10:00:00Z", "close": false, "redo": false},
+			},
+			"redo": []interface{}{redo},
 		})
 	case r.URL.Path == "/api/d3x/preview":
 		var in struct{ BBCode string }
