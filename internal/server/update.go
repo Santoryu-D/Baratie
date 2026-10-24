@@ -47,6 +47,19 @@ func (s *Server) PageGone() bool {
 	return now-last > int64(3*time.Minute)
 }
 
+// Resumed : l'ordinateur sort de veille. La page s'est tue pendant la veille
+// sans être fermée : elle a de nouveau 3 min pour se manifester. Chez karat
+// (24/10/26), l'écran éteint mettait le PC en veille légère ; au réveil, D3X
+// prenait ce silence pour une fenêtre fermée et s'arrêtait en plein lot. Une
+// page qui a dit au revoir reste partie.
+func (s *Server) Resumed() {
+	last, bye := s.lastSeen.Load(), s.byeAt.Load()
+	if last == 0 || (bye > 0 && bye >= last) {
+		return
+	}
+	s.lastSeen.CompareAndSwap(last, time.Now().UnixNano())
+}
+
 // PageSeen dit si la page a déjà appelé D3X depuis son lancement.
 func (s *Server) PageSeen() bool { return s.lastSeen.Load() != 0 }
 

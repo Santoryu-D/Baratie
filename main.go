@@ -233,8 +233,17 @@ func run(port int, window bool) error {
 	if desktop.HasTray && window {
 		go func() {
 			cleaned := false
+			// Heure murale, comme PageGone (l'horloge monotone peut ne pas compter
+			// la veille) : un tour de 5 s qui en a duré bien plus, c'est un réveil.
+			tick := time.Now().Round(0)
 			for {
 				time.Sleep(5 * time.Second)
+				now := time.Now().Round(0)
+				if now.Sub(tick) > 30*time.Second {
+					log.Println("sortie de veille : la page a le temps de revenir")
+					srv.Resumed()
+				}
+				tick = now
 				if !srv.PageGone() {
 					cleaned = false
 					continue
