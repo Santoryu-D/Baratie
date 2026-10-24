@@ -11,6 +11,7 @@ package links
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -71,7 +72,7 @@ func Make(base string, pairs []Pair) error {
 		if _, err := os.Stat(dir); err != nil {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				undo()
-				return errors.New("dossier impossible à créer : " + err.Error())
+				return fmt.Errorf("dossier impossible à créer : %w", err)
 			}
 			dirs = append(dirs, dir)
 		}
@@ -101,10 +102,15 @@ func explain(err error, symbolic bool) error {
 	switch {
 	case strings.Contains(s, "cross-device"), strings.Contains(s, "not same device"), strings.Contains(s, "different disk"), strings.Contains(s, "pas le même"):
 		return errors.New("le dossier des liens doit être sur le même disque que tes fichiers")
-	case strings.Contains(s, "not supported"), strings.Contains(s, "operation not permitted"), strings.Contains(s, "incorrect function"):
+	case strings.Contains(s, "operation not permitted"):
+		// Linux refuse aussi un lien physique vers un fichier dont D3X n'est pas
+		// propriétaire (protected_hardlinks), le cas d'un conteneur Docker.
+		return fmt.Errorf("lien physique refusé (disque qui ne les accepte pas, ou fichiers qui appartiennent à un autre utilisateur que celui de D3X) : %w", err)
+	case strings.Contains(s, "not supported"), strings.Contains(s, "incorrect function"):
 		return errors.New("ce disque n'accepte pas les liens physiques : " + err.Error())
 	}
-	return errors.New("lien impossible : " + err.Error())
+	// Gardé enveloppé : un refus d'écriture se reconnaît ensuite (droits).
+	return fmt.Errorf("lien impossible : %w", err)
 }
 
 // Remove retire des liens créés par Make : un fichier n'est effacé que s'il

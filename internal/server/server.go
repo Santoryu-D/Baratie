@@ -540,7 +540,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	s.cfg = &c
 	s.mu.Unlock()
 	if err := config.Save(&c); err != nil {
-		fail(w, http.StatusInternalServerError, errors.New("réglages non enregistrés : "+err.Error()))
+		fail(w, http.StatusInternalServerError, errors.New("réglages non enregistrés : "+withPermHint(err).Error()))
 		return
 	}
 	if restartWatch {

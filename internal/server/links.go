@@ -36,9 +36,9 @@ func (s *Server) linkFiles(ctx context.Context, rules []pathmap.Rule, base strin
 			lp[i] = links.Pair{Src: pathmap.FromClient(p.Src, rules), Dst: pathmap.FromClient(p.Dst, rules), Size: p.Size, Target: p.Target}
 		}
 		if remove {
-			return links.Remove(localBase, lp)
+			return withPermHint(links.Remove(localBase, lp))
 		}
-		return links.Make(localBase, lp)
+		return withPermHint(links.Make(localBase, lp))
 	}
 	if ssh != nil && strings.HasPrefix(base, "/") {
 		return source.Remote{C: ssh}.Links(ctx, base, pairs, remove)

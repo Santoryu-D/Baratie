@@ -202,8 +202,10 @@ function lotRender() {
 // « En attente », pour relancer le lot avec d'autres options (Turias, 21/10/26 :
 // « Vidéos et albums seulement » laissé coché, aucun moyen de recommencer).
 // Une release illisible le reste : son erreur vient de la lecture du dossier.
+// « Déjà présent » aussi (CoprinusComatus, 23/10/26 : 15 releases rangées là
+// par erreur, sans moyen de les relancer).
 function lotResettable() {
-  if (!["ready", "review", "simulated", "ignored", "error"].includes(lot.tab)) return [];
+  if (!["ready", "review", "simulated", "ignored", "error", "duplicate"].includes(lot.tab)) return [];
   return lot.entries.filter((e) => e.state === lot.tab && !e.error);
 }
 

@@ -1,9 +1,12 @@
 package links
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -123,5 +126,19 @@ func TestSymbolicLinks(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(dst)); !os.IsNotExist(err) {
 		t.Fatal("dossier vide laissé")
+	}
+}
+
+// Un refus d'écriture reste reconnaissable après l'explication : la page
+// peut alors dire quoi faire (droits du dossier sous Docker).
+func TestExplainKeepsPermission(t *testing.T) {
+	for _, cause := range []error{fs.ErrPermission, syscall.EPERM} {
+		err := explain(&os.LinkError{Op: "link", Old: "/data/Film.mkv", New: "/data/v3x-liens/Film.mkv", Err: cause}, false)
+		if !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("%v : refus perdu (%s)", cause, err)
+		}
+	}
+	if err := explain(errors.New("invalid cross-device link"), false); !strings.Contains(err.Error(), "même disque") {
+		t.Errorf("autre disque : %s", err)
 	}
 }

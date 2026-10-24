@@ -51,12 +51,12 @@ const ui = {
   selected: new Set(),
   picked: new Set(), // « Pas sur V3X » : releases choisies pour Publier ou Lot
   reqs: {}, // demandes ouvertes de V3X par ligne « Pas sur V3X »
-  reqVersion: -1,
+  reqSig: "", // releases pour lesquelles ces données ont été lues
   pols: {}, // team au réupload interdit ou sur accord, par ligne « Pas sur V3X »
-  polVersion: -1,
+  polSig: "",
   relays: {}, // relais ouverts sur V3X, par info hash
   relayPrime: 0,
-  relVersion: -1,
+  relSig: "",
   view: "cross",
   showIgnored: false, // « Pas sur V3X » : réafficher les releases ignorées
 };
@@ -928,7 +928,18 @@ function renderStatus(st) {
   if (st.version !== ui.version) loadRows();
 }
 
+// Un seul chargement à la fois : pendant les vérifications, la liste change
+// toutes les 3 s et se relisait à chaque seconde, les réponses s'empilaient et
+// la page saccadait avec de gros lots (MasterMan, 23/10/26). Un changement
+// arrivé pendant un chargement en relance un seul, à la fin.
+let rowsLoading = false;
+let rowsAgain = false;
 async function loadRows() {
+  if (rowsLoading) {
+    rowsAgain = true;
+    return;
+  }
+  rowsLoading = true;
   try {
     const r = await api("/ui/rows");
     ui.version = r.version;
@@ -938,11 +949,27 @@ async function loadRows() {
     const picks = new Set(ui.rows.filter(canPick).map((x) => x.key));
     for (const k of ui.picked) if (!picks.has(k)) ui.picked.delete(k);
     renderRows();
-    if (ui.reqVersion !== ui.version && ui.rows.some((x) => x.status === "none")) loadRequests();
-    if (ui.polVersion !== ui.version && ui.rows.some((x) => x.status === "none")) loadPolicies();
-    if (ui.relVersion !== ui.version && ui.rows.some((x) => x.status === "add")) loadRelays();
+    // Demandes, teams et relais ne dépendent que des releases présentes : relus
+    // quand elles changent (et toutes les 5 min, le site bouge aussi), pas à
+    // chaque pas d'une vérification.
+    const slot = Math.floor(Date.now() / 300000);
+    const sig = (status) => {
+      const k = ui.rows.filter((x) => x.status === status).map((x) => x.key);
+      return k.length ? k.join("|") + "#" + slot : "";
+    };
+    const none = sig("none");
+    const add = sig("add");
+    if (ui.reqSig !== none && none) loadRequests(none);
+    if (ui.polSig !== none && none) loadPolicies(none);
+    if (ui.relSig !== add && add) loadRelays(add);
   } catch (e) {
     if (e.message !== "session") toast(e.message, "bad");
+  } finally {
+    rowsLoading = false;
+    if (rowsAgain) {
+      rowsAgain = false;
+      loadRows();
+    }
   }
 }
 
@@ -989,31 +1016,31 @@ function checkable(r) {
 }
 
 // Demandes ouvertes sur V3X auxquelles répondent les releases « Pas sur V3X ».
-async function loadRequests() {
-  const v = ui.version;
-  ui.reqVersion = v;
+async function loadRequests(sig) {
+  ui.reqSig = sig;
   try {
     const r = await api("/ui/requests/match");
-    if (ui.version !== v) return;
+    if (ui.reqSig !== sig) return;
     ui.reqs = r.byKey || {};
     renderRows();
   } catch (e) {
     ui.reqs = {};
+    if (ui.reqSig === sig) ui.reqSig = "";
   }
 }
 
 // Teams qui interdisent le réupload ou le soumettent à leur accord (demande
 // d'Ekhstaz) : pastille sur la ligne, et case pour masquer les interdites.
-async function loadPolicies() {
-  const v = ui.version;
-  ui.polVersion = v;
+async function loadPolicies(sig) {
+  ui.polSig = sig;
   try {
     const r = await api("/ui/teams/policies");
-    if (ui.version !== v) return;
+    if (ui.polSig !== sig) return;
     ui.pols = r.byKey || {};
     renderRows();
   } catch (e) {
     ui.pols = {};
+    if (ui.polSig === sig) ui.polSig = "";
   }
 }
 
@@ -1051,17 +1078,17 @@ function toggleIgnored(r) {
 }
 
 // Relais ouverts (releases rares lâchées, prime au repreneur).
-async function loadRelays() {
-  const v = ui.version;
-  ui.relVersion = v;
+async function loadRelays(sig) {
+  ui.relSig = sig;
   try {
     const r = await api("/ui/relays");
-    if (ui.version !== v) return;
+    if (ui.relSig !== sig) return;
     ui.relays = r.byHash || {};
     ui.relayPrime = r.prime || 0;
     renderRows();
   } catch (e) {
     ui.relays = {};
+    if (ui.relSig === sig) ui.relSig = "";
   }
 }
 

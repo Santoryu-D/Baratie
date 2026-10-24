@@ -187,7 +187,7 @@ function libRender() {
   how.classList.toggle("warn", !d.links);
   how.textContent = d.links
     ? "Ajout par liens " + (d.symbolic ? "symboliques" : "physiques") + ", dans ton dossier de liens : les fichiers de ta médiathèque ne sont jamais touchés."
-    : "Ajout en renommant dans ton client : rien ne bouge sur le disque, mais le torrent pointera sur les fichiers de ta médiathèque. Ne le supprime jamais « avec ses fichiers ». Les liens (Réglages) évitent ça.";
+    : "Sans liens, le torrent seede directement les fichiers de ta médiathèque : rien n'est copié ni déplacé. Si tu le retires un jour de ton client, garde les fichiers : « avec ses fichiers » effacerait ceux de ta médiathèque. Pour ne jamais courir ce risque, active les liens dans Réglages.";
 
   const rows = d.rows || [];
   // Les releases « À compléter » se cochent aussi : sans elles ici, chaque
