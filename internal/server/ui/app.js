@@ -1674,7 +1674,10 @@ function drawn() {
 async function ping() {
   try {
     const shown = document.visibilityState === "visible" && (await drawn());
-    const r = await fetch("/ui/ping?id=" + PAGE_ID + "&shown=" + (shown ? 1 : 0));
+    // lot=1 : un lot tourne depuis cette page, D3X l'attend même si elle se tait
+    // (fenêtre endormie par le navigateur, écran éteint).
+    const lotOn = window.lotRunning && window.lotRunning();
+    const r = await fetch("/ui/ping?id=" + PAGE_ID + "&shown=" + (shown ? 1 : 0) + "&lot=" + (lotOn ? 1 : 0));
     if (r.status === 200 && (await r.json()).close) window.close();
   } catch (e) { /* rien */ }
 }
@@ -1684,7 +1687,7 @@ function presence() {
   setInterval(ping, 20000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ping(); });
   window.addEventListener("pagehide", () => {
-    try { navigator.sendBeacon("/ui/bye", new Blob(["{}"], { type: "application/json" })); } catch (e) { /* rien */ }
+    try { navigator.sendBeacon("/ui/bye", new Blob([JSON.stringify({ id: PAGE_ID })], { type: "application/json" })); } catch (e) { /* rien */ }
   });
 }
 

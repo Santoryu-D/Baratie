@@ -31,20 +31,67 @@ func (s *Server) SetUpdateKey(pub ed25519.PublicKey) {
 	s.mu.Unlock()
 }
 
+// pageSilence : une fenêtre réduite ne ralentit ses signaux qu'à un par
+// minute. lotSilence : pendant un lot, une fenêtre que le navigateur a
+// endormie (écran éteint) reprend son lot au retour ; D3X l'attend.
+const (
+	pageSilence = 3 * time.Minute
+	lotSilence  = 12 * time.Hour
+)
+
 // PageGone dit si la page a été fermée : elle a dit au revoir sans revenir
 // depuis 8 s (un rechargement revient tout de suite), ou elle ne donne plus
-// signe de vie depuis 3 min (une fenêtre réduite ne ralentit ses signaux qu'à
-// un par minute). Faux tant que la page n'est jamais venue.
+// signe de vie depuis 3 min. Pendant un lot, seul l'au revoir de la page du
+// lot compte, ou 12 h de silence (karat, 24/10/26 : écran éteint, PC jamais
+// en veille, D3X s'arrêtait pendant la sieste). Faux tant que la page n'est
+// jamais venue.
 func (s *Server) PageGone() bool {
+	gone, _ := s.pageGone()
+	return gone
+}
+
+// GoneWhy : pourquoi la page passe pour partie, pour le journal.
+func (s *Server) GoneWhy() string {
+	_, why := s.pageGone()
+	return why
+}
+
+func (s *Server) pageGone() (bool, string) {
 	last, bye := s.lastSeen.Load(), s.byeAt.Load()
 	if last == 0 {
-		return false
+		return false, ""
 	}
+	lot := s.LotRunning()
 	now := time.Now().UnixNano()
-	if bye > 0 && bye >= last && now-bye > int64(8*time.Second) {
-		return true
+	if bye > 0 && bye >= last && now-bye > int64(8*time.Second) && !lot {
+		return true, "la page a dit au revoir"
 	}
-	return now-last > int64(3*time.Minute)
+	silence := pageSilence
+	if lot {
+		silence = lotSilence
+	}
+	quiet := time.Duration(now - last)
+	return quiet > silence, "page muette depuis " + quiet.Round(time.Second).String()
+}
+
+// LotAdvancing : un lot tourne et sa page parle encore (moins de 10 min de
+// silence) ; une page endormie n'avance plus son lot.
+func (s *Server) LotAdvancing() bool {
+	return s.LotRunning() && time.Now().UnixNano()-s.lastSeen.Load() < int64(10*time.Minute)
+}
+
+// LotRunning : une page a dit, à son dernier signal, qu'un lot tournait (il y
+// a moins de 12 h).
+func (s *Server) LotRunning() bool {
+	s.pagesMu.Lock()
+	defer s.pagesMu.Unlock()
+	now := time.Now().UnixNano()
+	for _, at := range s.lotPages {
+		if now-at < int64(lotSilence) {
+			return true
+		}
+	}
+	return false
 }
 
 // Resumed : l'ordinateur sort de veille. La page s'est tue pendant la veille
@@ -75,6 +122,7 @@ func (s *Server) ping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shown := r.URL.Query().Get("shown") == "1"
+	lotOn := r.URL.Query().Get("lot") == "1"
 	s.pagesMu.Lock()
 	if s.pages == nil {
 		s.pages = map[string]bool{}
@@ -82,6 +130,14 @@ func (s *Server) ping(w http.ResponseWriter, r *http.Request) {
 	before, known := s.pages[id]
 	if len(s.pages) < 64 || known {
 		s.pages[id] = before || shown
+	}
+	if s.lotPages == nil {
+		s.lotPages = map[string]int64{}
+	}
+	if _, running := s.lotPages[id]; lotOn && (len(s.lotPages) < 64 || running) {
+		s.lotPages[id] = time.Now().UnixNano()
+	} else if !lotOn {
+		delete(s.lotPages, id)
 	}
 	other := false
 	for k, v := range s.pages {

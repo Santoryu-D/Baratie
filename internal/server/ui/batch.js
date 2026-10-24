@@ -611,6 +611,7 @@ async function lotRun() {
   lot.total = todo.length;
   lot.tab = "pending";
   lotRender();
+  ping(); // D3X sait tout de suite qu'un lot tourne
   const hold = opts.seedLater && !opts.sim;
   let holdTimer = null;
   if (hold) {
@@ -627,6 +628,7 @@ async function lotRun() {
     }
   }
   lot.running = false;
+  ping();
   lot.current = "";
   lotProgress("", "");
   const counts = {};
@@ -674,6 +676,9 @@ async function lotLoop(todo, opts) {
     }
   }
 }
+
+// Pour le signal de présence (app.js) : un lot tourne-t-il ?
+window.lotRunning = () => lot.running;
 
 window.batchShow = async (on) => {
   lotBar();

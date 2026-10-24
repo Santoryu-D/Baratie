@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -75,7 +76,8 @@ type Server struct {
 	lastSeen        atomic.Int64
 	byeAt           atomic.Int64
 	pagesMu         sync.Mutex
-	pages           map[string]bool // page → affichée à l'écran (ping ?id=&shown=)
+	pages           map[string]bool  // page → affichée à l'écran (ping ?id=&shown=)
+	lotPages        map[string]int64 // page → dernier signal avec un lot en cours (UnixNano)
 
 	ssh     *remote.Client // seedbox connectée (nil sinon)
 	sshSys  string
@@ -163,6 +165,15 @@ func NewWith(version string, cfg *config.Config, token string, port int, opts Op
 	s.mux.HandleFunc("POST /ui/update/check", s.checkNow)
 	s.mux.HandleFunc("GET /ui/ping", s.ping)
 	s.mux.HandleFunc("POST /ui/bye", func(w http.ResponseWriter, r *http.Request) {
+		// La page qui s'en va emporte son lot (il avance depuis elle).
+		var in struct {
+			ID string `json:"id"`
+		}
+		if json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&in) == nil && in.ID != "" {
+			s.pagesMu.Lock()
+			delete(s.lotPages, in.ID)
+			s.pagesMu.Unlock()
+		}
 		s.byeAt.Store(time.Now().UnixNano())
 		w.WriteHeader(http.StatusNoContent)
 	})

@@ -244,12 +244,21 @@ func run(port int, window bool) error {
 					srv.Resumed()
 				}
 				tick = now
+				// Lot en cours : Windows ne met pas le PC en veille de lui-même.
+				// Une page muette n'avance plus son lot : la veille revient.
+				if on := srv.LotAdvancing(); desktop.KeepAwake(on) {
+					if on {
+						log.Println("lot en cours : mise en veille automatique retenue")
+					} else {
+						log.Println("plus de lot en cours : mise en veille automatique rendue")
+					}
+				}
 				if !srv.PageGone() {
 					cleaned = false
 					continue
 				}
 				if !srv.Busy() && !srv.StayInTray() {
-					log.Println("fenêtre fermée, rien en cours : arrêt")
+					log.Println("fenêtre fermée, rien en cours : arrêt (" + srv.GoneWhy() + ")")
 					stop(0)
 				}
 				// D3X reste dans la zone de notification : la fenêtre fermée ne
