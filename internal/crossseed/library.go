@@ -449,6 +449,14 @@ func libPairs(t *torrent.Torrent, all []libLocal, bySize map[int64][]int) ([]lib
 			missing = append(missing, f)
 			continue
 		}
+		// Trop petit pour qu'un morceau en soit lu d'avance (un .nfo) : retenu
+		// seulement près de la vidéo. Ailleurs dans la médiathèque, un autre
+		// fichier de même taille passait pour lui, la release partait « À
+		// ajouter » et le client la trouvait incomplète (Poelon, 25/10/26).
+		if anchor != "" && len(t.InnerPieces(f, 1)) == 0 && !underDir(all[best].Path, anchor) {
+			missing = append(missing, f)
+			continue
+		}
 		used[best] = true
 		if anchor == "" {
 			anchor = all[best].Path
@@ -478,6 +486,13 @@ func pathDir(s string) string {
 func baseName(p string) string { return path.Base(slash(p)) }
 
 func sameDir(a, b string) bool { return strings.EqualFold(dirOf(a), dirOf(b)) }
+
+// underDir : p est dans le dossier du fichier anchor, ou dans un de ses
+// sous-dossiers (« Subs/ » d'une release).
+func underDir(p, anchor string) bool {
+	d := strings.ToLower(dirOf(anchor))
+	return strings.HasPrefix(strings.ToLower(dirOf(p))+"/", strings.TrimSuffix(d, "/")+"/")
+}
 
 // commonDir : le dossier qui contient tous les fichiers trouvés.
 func commonDir(pairs []libPair) string {

@@ -196,6 +196,52 @@ func TestClientsSettings(t *testing.T) {
 	}
 }
 
+// Deux D3X séparés, chacun avec son client (MrCryllix, 25/10/26) : une release
+// seedée par l'autre machine, que le tracker voit en seed, n'est pas « absente ».
+func TestSeedElsewhere(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("AppData", tmp)
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	t.Setenv("HOME", tmp)
+
+	pc, _ := fakeQbitServer(t, "motdepasse-pc", nil)
+	vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/me":
+			io.WriteString(w, `{"username":"membre","ratio":1,"hitAndRun":0}`)
+		case "/api/d3x/seed-status":
+			deadline := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
+			io.WriteString(w, `{"hnr":{"enabled":true,"items":[`+
+				`{"torrentId":"t1","name":"Ailleurs","infoHash":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","seedSeconds":0,"requiredSeconds":3600,"deadline":"`+deadline+`","seedingNow":true},`+
+				`{"torrentId":"t2","name":"Nulle.Part","infoHash":"ffffffffffffffffffffffffffffffffffffffff","seedSeconds":0,"requiredSeconds":3600,"deadline":"`+deadline+`","seedingNow":false}]},"relays":{"items":[]}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vs.Close()
+
+	cfg := config.Defaults()
+	cfg.V3XBase, cfg.V3XKey = vs.URL, "cle"
+	cfg.Clients = []config.ClientConfig{{ID: "pc", Name: "PC", URL: pc.URL, User: "admin", Pass: "motdepasse-pc"}}
+	s := NewWith("test", cfg, "jeton-de-test-0123456789abcdef", 8733, Options{})
+	s.connect()
+
+	view, err := s.buildSeed(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]seedItem{}
+	for _, x := range view.Items {
+		got[x.Name] = x
+	}
+	if x := got["Ailleurs"]; x.Client != SeedElsewhere || x.Risk != "ok" {
+		t.Fatalf("seedée par l'autre machine : %+v", x)
+	}
+	if x := got["Nulle.Part"]; x.Client != SeedMissing || x.Risk == "ok" {
+		t.Fatalf("vraiment absente : %+v", x)
+	}
+}
+
 func TestClientLabels(t *testing.T) {
 	got := clientLabels([]config.ClientConfig{{ID: "a"}, {ID: "b", Kind: "deluge"}, {ID: "c"}, {ID: "d", Name: "Seedbox"}})
 	want := map[string]string{"a": "qBittorrent", "b": "Deluge", "c": "qBittorrent 2", "d": "Seedbox"}

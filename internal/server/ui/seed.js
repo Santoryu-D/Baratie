@@ -12,6 +12,7 @@ const SEED_CLIENT = {
   checking: ["Vérification", ""],
   downloading: ["Téléchargement", ""],
   missing: ["Absente du client", "bad"],
+  elsewhere: ["En seed ailleurs", "ok"],
   unknown: ["Client injoignable", "warn"],
 };
 
@@ -103,6 +104,7 @@ function seedRender() {
     tdC.append(el("span", "pill " + kind, lab));
     if (x.where) tdC.append(el("div", "sub", x.where));
     if (x.client === "seeding" && !x.seedingNow) tdC.append(el("div", "sub", "pas encore vue par le tracker"));
+    if (x.client === "elsewhere") tdC.append(el("div", "sub", "vue en seed par V3X depuis une autre machine"));
     const tdA = el("td");
     if (x.client === "stopped") {
       const b = el("button", "btn small", "Démarrer");

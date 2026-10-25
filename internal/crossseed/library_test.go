@@ -297,3 +297,43 @@ func TestLibraryComplete(t *testing.T) {
 		t.Fatalf("liens : %+v", made)
 	}
 }
+
+// Un .nfo trop petit pour être vérifié d'avance n'est retenu que près de la
+// vidéo : un fichier de même taille ailleurs dans la médiathèque n'est pas lui
+// (Poelon, 25/10/26).
+func TestLibPairsSmallFileNearVideo(t *testing.T) {
+	work := t.TempDir()
+	rel := filepath.Join(work, "v3x", "Film.2020.MULTi.1080p-GRP")
+	film := fill(3_000_000, 2)
+	nfo := []byte("nfo de la release, 42 o")
+	_ = os.MkdirAll(rel, 0o755)
+	_ = os.WriteFile(filepath.Join(rel, "Film.2020.MULTi.1080p-GRP.mkv"), film, 0o644)
+	_ = os.WriteFile(filepath.Join(rel, "Film.2020.MULTi.1080p-GRP.nfo"), nfo, 0o644)
+	tr, err := torrent.Parse(hashed(t, rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair := func(files []LibFile) ([]libPair, []torrent.File) {
+		var all []libLocal
+		bySize := map[int64][]int{}
+		for i, f := range files {
+			all = append(all, libLocal{LibFile: f})
+			bySize[f.Size] = append(bySize[f.Size], i)
+		}
+		return libPairs(tr, all, bySize)
+	}
+	video := LibFile{Path: "/medias/Film (2020)/Film (2020).mkv", Size: int64(len(film))}
+
+	// Même taille, mais dans un autre dossier : manquant (la release sera « À compléter »).
+	pairs, missing := pair([]LibFile{video, {Path: "/medias/Autre/notes.nfo", Size: int64(len(nfo))}})
+	if len(pairs) != 1 || len(missing) != 1 || !strings.HasSuffix(missing[0].Path, ".nfo") {
+		t.Fatalf("ailleurs : %d paires, manquants %+v", len(pairs), missing)
+	}
+	// À côté de la vidéo, ou dans un sous-dossier : retenu.
+	for _, p := range []string{"/medias/Film (2020)/Film (2020).nfo", "/medias/Film (2020)/Extras/film.nfo"} {
+		pairs, missing = pair([]LibFile{video, {Path: p, Size: int64(len(nfo))}})
+		if len(pairs) != 2 || len(missing) != 0 {
+			t.Fatalf("%s : %d paires, manquants %+v", p, len(pairs), missing)
+		}
+	}
+}

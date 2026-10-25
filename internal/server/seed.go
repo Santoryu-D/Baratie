@@ -25,6 +25,7 @@ const (
 	SeedChecking    = "checking"    // vérification
 	SeedDownloading = "downloading" // téléchargement en cours
 	SeedMissing     = "missing"     // absente de tous les clients
+	SeedElsewhere   = "elsewhere"   // absente d'ici, mais V3X la voit en seed (une autre machine)
 	SeedUnknown     = "unknown"     // absente des clients joints, un autre est injoignable
 )
 
@@ -191,6 +192,11 @@ func (s *Server) buildSeed(ctx context.Context, fresh bool) (*seedView, error) {
 		x := seedItem{HnRItem: it, Client: SeedMissing}
 		if t, ok := byHash[strings.ToLower(it.InfoHash)]; ok {
 			x.Client, x.Progress, x.Where = clientState(t.t), t.t.Progress, t.where
+		} else if it.SeedingNow {
+			// Absente des clients de ce D3X, mais le tracker voit le membre la
+			// seeder : une autre machine s'en charge (deux D3X séparés,
+			// MrCryllix, 25/10/26). Rien à remettre ici.
+			x.Client = SeedElsewhere
 		} else if len(down) > 0 {
 			// Peut-être dans le client injoignable : on ne crie pas au loup.
 			x.Client = SeedUnknown
@@ -203,7 +209,7 @@ func (s *Server) buildSeed(ctx context.Context, fresh bool) (*seedView, error) {
 		switch {
 		case it.HnR:
 			x.Risk = "bad"
-		case x.Client == SeedOK || x.Client == SeedChecking || x.Client == SeedUnknown:
+		case x.Client == SeedOK || x.Client == SeedChecking || x.Client == SeedUnknown || x.Client == SeedElsewhere:
 			x.Risk = "ok"
 			if float64(x.Left)/3600 > hoursLeft {
 				x.Risk = "bad"
