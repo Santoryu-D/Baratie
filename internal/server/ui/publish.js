@@ -158,7 +158,7 @@ const WARNINGS = {
   tmdb_not_found: "Cette fiche TMDB est introuvable.",
   mb_not_found: "Cette édition MusicBrainz est introuvable.",
   igdb_not_found: "Ce jeu est introuvable dans la base des jeux vidéo.",
-  book_not_found: "Ce livre est introuvable : vérifie le lien ou l'ISBN.",
+  book_not_found: "Ce livre est introuvable : vérifie le lien ou l'ISBN, ou publie sans (choisis alors toi-même la sous-catégorie).",
   book_invalid_ref: "Ce n'est ni un lien Open Library (œuvre ou édition) ni un ISBN.",
   audio_naming: "Le nom d'une release musicale doit suivre le nommage du site.",
   category_unknown: "Catégorie inconnue sur V3X.",
@@ -451,6 +451,7 @@ function resetForm() {
   $("#game-state").textContent = "";
   $("#game-field").classList.add("hidden");
   $("#book-picked").classList.add("hidden");
+  $("#book-state").textContent = BOOK_HINT;
   $("#book-field").classList.add("hidden");
   $("#versions").classList.add("hidden");
   $("#f-notmdb").checked = false;
@@ -972,6 +973,8 @@ function gamePoster() {
 // auteur, couverture et fiche livre, comme le même lien collé sur le site.
 // Sans catégorie choisie, une release faite de livres (.epub, .pdf…) aussi :
 // le livre trouvé range la fiche dans Ebook ▸ Livres.
+const BOOK_HINT = "Le lien de l'œuvre ou de l'édition, ou l'ISBN : titre, auteur, couverture et fiche du livre, comme sur le site. Facultatif.";
+
 function isBook() {
   const r = $("#f-root").value;
   if (r) return r === "ebook";
@@ -997,7 +1000,11 @@ function renderBook(f) {
   const w = (f.warnings || []).find((x) => x === "book_not_found" || x === "book_invalid_ref");
   if (w || !f.book) {
     p.classList.add("hidden");
-    $("#book-state").textContent = WARNINGS[w] || "Ce livre est introuvable.";
+    // Introuvable (sortie récente, petite édition) : rien n'oblige à un lien,
+    // mais sans livre trouvé D3X ne devine pas la sous-catégorie (MiTor, 25/10/26).
+    $("#book-state").textContent = w === "book_invalid_ref"
+      ? WARNINGS[w]
+      : "Ce livre est introuvable : vérifie le lien ou l'ISBN. Tu peux aussi publier sans : vide ce champ, choisis toi-même la sous-catégorie (Ebook ▸ Livres, BDs…), mets le titre et la couverture en première image de la présentation (bouton « Image du PC »).";
     return;
   }
   const b = f.book;
@@ -1536,6 +1543,14 @@ function bindPublish() {
   $("#game-q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchGame(); });
   $("#book-go").addEventListener("click", useBook);
   $("#book-q").addEventListener("keydown", (e) => { if (e.key === "Enter") useBook(); });
+  // Champ vidé : le livre est oublié, la fiche se refait sans (MiTor, 25/10/26).
+  $("#book-q").addEventListener("input", () => {
+    if ($("#book-q").value.trim() || !pub.book) return;
+    pub.book = null;
+    $("#book-picked").classList.add("hidden");
+    $("#book-state").textContent = BOOK_HINT;
+    loadFicheSoon();
+  });
   $("#f-leaf").addEventListener("change", () => { pub.dirty.category = true; loadFicheSoon(); renderBar(); });
   $("#f-vt").addEventListener("input", renderBar);
   $("#f-name").addEventListener("input", () => { pub.dirty.name = true; loadFicheSoon(); renderBar(); });

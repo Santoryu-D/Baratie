@@ -11,7 +11,7 @@ L'outil de bureau des membres de [V3X](https://v3x.club).
 - **Publier** : tu choisis un dossier ou un fichier, sur ce PC ou sur ta seedbox, D3X fabrique le .torrent là où sont les fichiers pendant que tu remplis la fiche, que V3X prépare exactement comme sur sa page d'upload. Une fois publiée, la release part en seed dans ton client, sur les mêmes fichiers.
 - **Musique** : D3X lit les tags et la qualité des pistes, retrouve l'album dans MusicBrainz en comparant les durées, et prépare la fiche album du site.
 - **Jeux vidéo** : dans Jeux vidéo ou Émulation, tu cherches le jeu par son titre ; titre, jaquette et fiche jeu du site (genres, studios, config requise) se remplissent, comme sur la page d'upload.
-- **Livres** : dans Ebook (ou pour une release faite de .epub, .pdf…), le lien Open Library du livre ou son ISBN remplit titre, auteur, couverture et fiche livre, comme sur la page d'upload.
+- **Livres** : dans Ebook (ou pour une release faite de .epub, .pdf…), le lien Open Library du livre ou son ISBN remplit titre, auteur, couverture et fiche livre, comme sur la page d'upload. Il est facultatif : un livre introuvable (sortie récente, petite édition) se publie sans, en choisissant soi-même la sous-catégorie.
 - **Lot** : un dossier entier passé au crible. D3X ne publie seul que ce qui est sûr ; le reste attend ta revue.
 
 Clients pris en charge : **qBittorrent**, **Transmission**, **Deluge** et **rTorrent** (ruTorrent), sur ce PC, un NAS ou une seedbox, et [plusieurs à la fois](#plusieurs-clients) (une seedbox et ce PC, par exemple).
@@ -97,8 +97,8 @@ Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et
 
 - Aucune place en plus : un lien physique est le même fichier sous un autre nom.
 - Ta copie n'est pas touchée, et rien n'est jamais écrasé : un lien ne se crée que là où il n'y a rien. Si l'ajout échoue, les liens sont retirés, et D3X n'efface un lien que s'il pointe bien vers ta copie.
-- Le dossier doit exister, sur le même disque que tes fichiers, et D3X doit le voir : sur ce PC, par un partage avec les dossiers du client, ou sur ta seedbox par son agent.
-- **Liens symboliques** (case à cocher au même endroit) : pour une copie qu'on ne peut pas lier physiquement, comme un partage NFS ou SMB en lecture seule ou un autre disque. Chaque lien vise le fichier tel que ton client le voit, et le dossier des liens peut être n'importe où, tant que ton client peut y écrire. Ne déplace pas ta copie ensuite : le lien pointerait dans le vide. Sous Windows, il faut le mode développeur.
+- Le dossier doit exister, sur le même disque que tes fichiers, et D3X doit le voir : sur ce PC, par un partage avec les dossiers du client, ou sur ta seedbox par son agent. Sans dossier des liens, D3X n'en fait aucun pour ce client et repasse par le renommage : les Réglages le signalent.
+- **Liens symboliques** (case à cocher au même endroit, qui active aussi les liens) : pour une copie qu'on ne peut pas lier physiquement, comme un partage NFS ou SMB en lecture seule ou un autre disque. Chaque lien vise le fichier tel que ton client le voit, et le dossier des liens peut être n'importe où, tant que ton client peut y écrire. Ne déplace pas ta copie ensuite : le lien pointerait dans le vide. Sous Windows, il faut le mode développeur.
 
 ## Publier, en mieux
 

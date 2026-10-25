@@ -275,7 +275,7 @@
             <button class="btn small" id="book-go">Utiliser</button>
           </div>
           <div class="tmdb-picked hidden" id="book-picked"></div>
-          <p class="hint" id="book-state" aria-live="polite">Le lien de l'œuvre ou de l'édition, ou l'ISBN : titre, auteur, couverture et fiche du livre, comme sur le site.</p>
+          <p class="hint" id="book-state" aria-live="polite">Le lien de l'œuvre ou de l'édition, ou l'ISBN : titre, auteur, couverture et fiche du livre, comme sur le site. Facultatif.</p>
         </div>
         <div class="field span2 hidden" id="versions">
           <label>Déjà sur V3X</label>
@@ -494,6 +494,7 @@
       <legend>Liens</legend>
       <label class="check"><input id="l-on" type="checkbox"> Quand renommer dans le client est impossible, ranger la release V3X dans un dossier de liens</label>
       <div id="l-dirs"></div>
+      <div class="notice warn hidden" id="l-warn"></div>
       <p class="hint">Chaque fichier de la release V3X y devient un lien physique vers le fichier de ta copie : aucune place en plus, ta copie n'est pas touchée, rien n'est écrasé. Le dossier doit exister, sur le même disque que tes fichiers, et D3X doit le voir (sur cette machine, avec les dossiers du client au-dessus, ou par ta seedbox). Utile surtout avec rTorrent, qui ne sait pas renommer.</p>
       <label class="check"><input id="l-sym" type="checkbox"> Liens symboliques plutôt que physiques</label>
       <p class="hint">Pour une copie qu'on ne peut pas lier physiquement : partage réseau en lecture seule (NFS, SMB), autre disque. Le lien vise le fichier tel que ton client le voit (avec les dossiers du client au-dessus) ; le dossier des liens peut alors être n'importe où, tant que ton client peut y écrire. Ne déplace pas ta copie ensuite : le lien pointerait dans le vide. Sous Windows, il faut le mode développeur.</p>

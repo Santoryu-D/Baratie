@@ -389,6 +389,7 @@ function fillSettings() {
   buildSwatches((s.appearance && s.appearance.uiAccent) || "");
   $("#l-on").checked = !!(s.links && s.links.on);
   $("#l-sym").checked = !!(s.links && s.links.symbolic);
+  linksWarn();
   const w = s.watch || {};
   $("#w-on").checked = !!w.on;
   $("#w-min").value = String([15, 30, 60, 180].includes(w.minutes) ? w.minutes : 30);
@@ -636,8 +637,21 @@ function renderLinkDirs() {
   box.replaceChildren();
   edit.clients.forEach((c, i) => {
     const id = "l-dir-" + i;
-    box.append(labelFor(id, single ? "Dossier des liens, tel que ton client le voit" : "Dossier des liens, tel que « " + editName(c) + " » le voit"), input(id, c.linksDir, "/data/torrents/v3x-liens", (v) => { c.linksDir = v; }));
+    box.append(labelFor(id, single ? "Dossier des liens, tel que ton client le voit" : "Dossier des liens, tel que « " + editName(c) + " » le voit"), input(id, c.linksDir, "/data/torrents/v3x-liens", (v) => { c.linksDir = v; linksWarn(); }));
   });
+  linksWarn();
+}
+
+// Liens cochés sans dossier des liens : D3X n'en fait aucun pour ce client et
+// repasse par le renommage dans le client, sans rien dire (odeuxcool, 24/10/26).
+function linksWarn() {
+  const n = $("#l-warn");
+  const empty = $("#l-on").checked ? edit.clients.filter((c) => !c.linksDir.trim()) : [];
+  n.classList.toggle("hidden", !empty.length);
+  if (!empty.length) return;
+  n.textContent = edit.clients.length <= 1
+    ? "Le dossier des liens est vide : sans lui, D3X ne fait aucun lien et repasse par le renommage dans le client."
+    : "Dossier des liens vide pour " + empty.map((c) => "« " + editName(c) + " »").join(", ") + " : pour ce client, D3X ne fait aucun lien et repasse par le renommage.";
 }
 
 // Ce que la page envoie d'un client (identifiant vide : client neuf).
@@ -1709,6 +1723,16 @@ async function boot() {
     if (inp) inp.focus();
   });
   $("#settings-cancel").addEventListener("click", () => $("#settings").close());
+  // Liens symboliques = des liens : cocher l'un coche l'autre, décocher les
+  // liens décoche les symboliques (odeuxcool, 24/10/26).
+  $("#l-sym").addEventListener("change", () => {
+    if ($("#l-sym").checked) $("#l-on").checked = true;
+    linksWarn();
+  });
+  $("#l-on").addEventListener("change", () => {
+    if (!$("#l-on").checked) $("#l-sym").checked = false;
+    linksWarn();
+  });
   $("#f-theme").addEventListener("change", previewAppearance);
   // Fermé sans enregistrer : retour à l'apparence en vigueur.
   $("#settings").addEventListener("close", () => {
