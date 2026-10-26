@@ -64,7 +64,7 @@ Avec un seul client, rien ne change : mêmes écrans, aucune étiquette.
 
 ## Mon seed
 
-- **Hit and run** : chaque release à seeder encore, le temps fait et l'échéance, comparés à l'état réel dans ton client (en seed, arrêtée, absente). Celles qui n'auront plus le temps d'y arriver passent en rouge, en tête.
+- **Hit and run** : chaque release à seeder encore, le temps fait et l'échéance, comparés à l'état réel dans ton client (en seed, arrêtée, absente). Une release absente de ce D3X mais que V3X voit en seed chez toi (une autre machine, un autre D3X) est marquée « En seed ailleurs », pas « Absente du client ». Celles qui n'auront plus le temps d'y arriver passent en rouge, en tête.
 - **Relais** : ceux que tu as déjà, ou que tu peux ajouter en cross-seed.
 - **Releases V3X arrêtées** : complètes dans ton client mais arrêtées, elles ne seedent pas. Un bouton les redémarre (seulement les complètes : D3X ne lance jamais un téléchargement).
 
