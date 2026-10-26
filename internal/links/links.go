@@ -95,7 +95,7 @@ func explain(err error, symbolic bool) error {
 	s := strings.ToLower(err.Error())
 	if symbolic {
 		if strings.Contains(s, "privilege") || strings.Contains(s, "privilège") {
-			return errors.New("Windows refuse les liens symboliques : active le mode développeur (Paramètres ▸ Système ▸ Pour les développeurs) ou lance D3X en administrateur")
+			return errors.New("Windows refuse les liens symboliques : active le mode développeur (Paramètres ▸ Système ▸ Pour les développeurs) ou lance Baratie en administrateur")
 		}
 		return errors.New("lien symbolique impossible : " + err.Error())
 	}
@@ -103,9 +103,9 @@ func explain(err error, symbolic bool) error {
 	case strings.Contains(s, "cross-device"), strings.Contains(s, "not same device"), strings.Contains(s, "different disk"), strings.Contains(s, "pas le même"):
 		return errors.New("le dossier des liens doit être sur le même disque que tes fichiers")
 	case strings.Contains(s, "operation not permitted"):
-		// Linux refuse aussi un lien physique vers un fichier dont D3X n'est pas
+		// Linux refuse aussi un lien physique vers un fichier dont Baratie n'est pas
 		// propriétaire (protected_hardlinks), le cas d'un conteneur Docker.
-		return fmt.Errorf("lien physique refusé (disque qui ne les accepte pas, ou fichiers qui appartiennent à un autre utilisateur que celui de D3X) : %w", err)
+		return fmt.Errorf("lien physique refusé (disque qui ne les accepte pas, ou fichiers qui appartiennent à un autre utilisateur que celui de Baratie) : %w", err)
 	case strings.Contains(s, "not supported"), strings.Contains(s, "incorrect function"):
 		return errors.New("ce disque n'accepte pas les liens physiques : " + err.Error())
 	}

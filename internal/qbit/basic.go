@@ -9,8 +9,8 @@ import (
 
 // basicAuth : une seedbox peut placer l'interface web derrière une
 // identification HTTP du serveur, une fenêtre « identifiez-vous » avant même
-// qBittorrent (calcifer chez son hébergeur, 23/10/26 : il fallait écrire le
-// mot de passe dans l'adresse). Sur un 401 qui la demande, la requête est
+// qBittorrent (sans ce relais, il faudrait écrire le mot de passe dans
+// l'adresse). Sur un 401 qui la demande, la requête est
 // rejouée avec l'utilisateur et le mot de passe des champs, puis ils partent
 // d'emblée. Des identifiants écrits dans l'adresse restent prioritaires : Go
 // les pose lui-même avant d'arriver ici.

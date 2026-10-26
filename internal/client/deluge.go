@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"baratie/internal/torrent"
 )
 
 // Deluge, par le JSON-RPC de son interface web (« /json », mot de passe de
@@ -140,8 +140,7 @@ func (d *deluge) call(ctx context.Context, method string, params []interface{}, 
 }
 
 // Deluge 2 : daemon.get_version ; Deluge 1.3 : daemon.info. Le test de
-// connexion échouait sur « Unknown method » avec Deluge 2.1.1 (retour
-// CoprinusComatus, 20/10/26).
+// connexion échouait sur « Unknown method » avec Deluge 2.1.1.
 func (d *deluge) Version(ctx context.Context) (string, error) {
 	var v string
 	err := d.call(ctx, "daemon.get_version", nil, &v)

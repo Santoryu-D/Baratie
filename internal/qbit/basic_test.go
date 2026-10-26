@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// Seedbox derrière une identification HTTP du serveur (calcifer, 23/10/26) :
+// Seedbox derrière une identification HTTP du serveur :
 // le pseudo et le mot de passe des champs servent aussi à cette fenêtre.
 func TestBasicAuthProxy(t *testing.T) {
 	ctx := context.Background()

@@ -1,6 +1,6 @@
 # Polices
 
-Les trois polices du site V3X, sous-ensemble latin (caractères français compris), en polices variables :
+Les trois polices de l'interface, sous-ensemble latin (caractères français compris), en polices variables :
 
 | Fichier | Police | Graisses | Licence |
 | --- | --- | --- | --- |

@@ -1,7 +1,7 @@
 // Package maketorrent fabrique le .torrent d'une release à partir des fichiers.
 //
 // Deux temps : Scan liste les fichiers (rapide, sans rien lire) et donne déjà
-// les empreintes de contenu, de quoi savoir si la release existe sur V3X avant
+// les empreintes de contenu, de quoi savoir si la release existe sur le tracker avant
 // de hacher quoi que ce soit ; Hash lit les données et calcule les pièces sur
 // tous les cœurs de la machine.
 package maketorrent
@@ -24,18 +24,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/V3x0rV3x/D3X/internal/bencode"
-	"github.com/V3x0rV3x/D3X/internal/config"
-	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"baratie/internal/bencode"
+	"baratie/internal/config"
+	"baratie/internal/torrent"
 )
 
 // DefaultExclude : motifs écartés par défaut (voir config). Les fichiers et
 // dossiers cachés (« .DS_Store », « .@__thumb »…) sont toujours écartés.
 var DefaultExclude = config.DefaultExclude
 
-// Source est le marqueur posé dans le dict info, comme le fait le site : le
-// .torrent fabriqué a ainsi déjà l'info-hash qu'il aura sur V3X.
-const Source = "V3X"
+// Source est le marqueur posé dans le dict info. UNIT3D le remplace par le
+// sien à l'upload : le .torrent à seeder est celui que rend le tracker.
+const Source = "Baratie"
 
 // Entry est un fichier de la release.
 type Entry struct {
@@ -127,7 +127,7 @@ func Excluded(name string, patterns []string) bool {
 
 // systemDirs : dossiers du système ou du NAS, jamais une release, souvent
 // illisibles (corbeille Windows à la racine d'un disque : « open
-// D:\$RECYCLE.BIN\S-1-5-18: Access is denied », Maxxi37 21/10/26). Écartés
+// D:\$RECYCLE.BIN\S-1-5-18: Access is denied »). Écartés
 // d'office, même si la liste d'exclusions des Réglages a été modifiée.
 var systemDirs = map[string]bool{
 	"$recycle.bin": true, "recycler": true, "system volume information": true,
@@ -245,7 +245,7 @@ func (p *Plan) Hash(ctx context.Context, createdBy string, progress Progress) (r
 		info["files"] = list
 	}
 	raw, err = bencode.Encode(bencode.Dict{
-		"announce":      []byte("https://announce.v3x.club/announce"),
+		"announce":      []byte("https://tracker.invalid/announce"),
 		"created by":    []byte(createdBy),
 		"creation date": time.Now().Unix(),
 		"info":          info,

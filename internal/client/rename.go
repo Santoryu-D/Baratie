@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/V3x0rV3x/D3X/internal/qbit"
+	"baratie/internal/qbit"
 )
 
 // Rename : un fichier d'un torrent, son chemin d'origine (From, celui du
@@ -165,12 +165,12 @@ func componentRenames(renames []Rename) ([][2]string, error) {
 	for _, r := range renames {
 		a, b := strings.Split(r.From, "/"), strings.Split(r.To, "/")
 		if len(a) != len(b) {
-			return nil, errors.New("les dossiers de ta copie ne sont pas rangés comme ceux de la release V3X : ce client ne sait pas déplacer un fichier d'un dossier à l'autre")
+			return nil, errors.New("les dossiers de ta copie ne sont pas rangés comme ceux de la release du tracker : ce client ne sait pas déplacer un fichier d'un dossier à l'autre")
 		}
 		for k := 0; k < len(a)-1; k++ {
 			key := strings.Join(a[:k+1], "/")
 			if v, ok := dirs[key]; ok && v != b[k] {
-				return nil, errors.New("un même dossier de la release V3X correspond à deux dossiers de ta copie")
+				return nil, errors.New("un même dossier de la release du tracker correspond à deux dossiers de ta copie")
 			}
 			dirs[key] = b[k]
 		}

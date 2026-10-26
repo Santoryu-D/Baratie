@@ -1,4 +1,4 @@
-// Package journal tient l'historique de ce que D3X a fait (history.jsonl,
+// Package journal tient l'historique de ce que Baratie a fait (history.jsonl,
 // une ligne JSON par événement, à côté de la configuration). Aucun secret.
 package journal
 
@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/V3x0rV3x/D3X/internal/config"
+	"baratie/internal/config"
 )
 
 // Event est une ligne du journal.
@@ -18,7 +18,7 @@ type Event struct {
 	Kind     string    `json:"kind"` // crossseed, crossseed_failed, removed
 	Name     string    `json:"name"`
 	InfoHash string    `json:"infoHash,omitempty"`
-	ID       string    `json:"id,omitempty"` // fiche V3X
+	ID       string    `json:"id,omitempty"` // fiche sur le tracker
 	Detail   string    `json:"detail,omitempty"`
 	Path     string    `json:"path,omitempty"` // release locale (publication, lot)
 }

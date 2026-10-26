@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/V3x0rV3x/D3X/internal/bencode"
-	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"baratie/internal/bencode"
+	"baratie/internal/torrent"
 )
 
 func sampleTorrent(t *testing.T) ([]byte, string) {
@@ -60,7 +60,7 @@ func TestTransmission(t *testing.T) {
 			res["version"] = "4.0.6"
 		case "torrent-get":
 			res["torrents"] = []map[string]interface{}{{"hashString": strings.ToUpper(hash), "name": "Release.Test", "totalSize": 1000, "sizeWhenDone": 1000,
-				"downloadDir": "/data", "percentDone": 1.0, "status": 2, "trackers": []map[string]string{{"announce": "https://announce.v3x.club/pk/announce"}},
+				"downloadDir": "/data", "percentDone": 1.0, "status": 2, "trackers": []map[string]string{{"announce": "https://announce.tracker.invalid/pk/announce"}},
 				"files": []map[string]interface{}{{"name": "Release.Test/a.mkv", "length": 1000}}}}
 		case "torrent-add":
 			addArgs = req.Arguments
@@ -85,7 +85,7 @@ func TestTransmission(t *testing.T) {
 		t.Fatalf("liste : %v %v", list, err)
 	}
 	tor := list[0]
-	if tor.Hash != hash || tor.ContentPath != "/data/Release.Test" || !tor.Checking || tor.Trackers[0] != "announce.v3x.club" {
+	if tor.Hash != hash || tor.ContentPath != "/data/Release.Test" || !tor.Checking || tor.Trackers[0] != "announce.tracker.invalid" {
 		t.Fatalf("torrent : %+v", tor)
 	}
 	files, total, err := c.Files(ctx, hash)
@@ -95,7 +95,7 @@ func TestTransmission(t *testing.T) {
 	if _, err := c.Export(ctx, hash); err != ErrNoExport {
 		t.Fatal("Transmission n'exporte pas")
 	}
-	if err := c.Add(ctx, "x.torrent", raw, AddOptions{SavePath: "/data", Tag: "D3X"}); err != nil {
+	if err := c.Add(ctx, "x.torrent", raw, AddOptions{SavePath: "/data", Tag: "Baratie"}); err != nil {
 		t.Fatal(err)
 	}
 	if addArgs["paused"] != true || addArgs["download-dir"] != "/data" {
@@ -272,7 +272,7 @@ func TestRTorrent(t *testing.T) {
 			row := []interface{}{strings.ToUpper(hash), "Release.Test", "/home/box/dl/Release.Test", 1000, 1000, 0, 1, 1, 1}
 			io.WriteString(w, xmlResp([]interface{}{row}))
 		case "system.multicall":
-			io.WriteString(w, xmlResp([]interface{}{[]interface{}{[]interface{}{[]interface{}{"https://announce.v3x.club/pk/announce"}}}}))
+			io.WriteString(w, xmlResp([]interface{}{[]interface{}{[]interface{}{[]interface{}{"https://announce.tracker.invalid/pk/announce"}}}}))
 		case "f.multicall":
 			io.WriteString(w, xmlResp([]interface{}{[]interface{}{"a.mkv", 1000}}))
 		case "d.is_multi_file":
@@ -299,7 +299,7 @@ func TestRTorrent(t *testing.T) {
 		t.Fatalf("liste : %v %v", list, err)
 	}
 	tor := list[0]
-	if tor.Hash != hash || tor.ContentPath != "/home/box/dl/Release.Test" || !tor.Checking || len(tor.Trackers) != 1 || tor.Trackers[0] != "announce.v3x.club" {
+	if tor.Hash != hash || tor.ContentPath != "/home/box/dl/Release.Test" || !tor.Checking || len(tor.Trackers) != 1 || tor.Trackers[0] != "announce.tracker.invalid" {
 		t.Fatalf("torrent : %+v", tor)
 	}
 	files, total, err := c.Files(ctx, hash)
@@ -352,10 +352,10 @@ func TestRTorrentAddAndFault(t *testing.T) {
 	defer srv.Close()
 	c, _ := New(Options{Kind: "rtorrent", URL: srv.URL})
 	ctx := context.Background()
-	if err := c.Add(ctx, "x.torrent", raw, AddOptions{SavePath: `/home/box/dl "a"`, Tag: "D3X"}); err != nil {
+	if err := c.Add(ctx, "x.torrent", raw, AddOptions{SavePath: `/home/box/dl "a"`, Tag: "Baratie"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded) != 4 || loaded[0] != "" || loaded[1] != string(raw) || loaded[2] != `d.directory.set="/home/box/dl \"a\""` || loaded[3] != `d.custom1.set="D3X"` {
+	if len(loaded) != 4 || loaded[0] != "" || loaded[1] != string(raw) || loaded[2] != `d.directory.set="/home/box/dl \"a\""` || loaded[3] != `d.custom1.set="Baratie"` {
 		t.Fatalf("load.raw : %q", loaded)
 	}
 	if err := c.Start(ctx, "abc"); err == nil || !strings.Contains(err.Error(), "Could not find info-hash") {

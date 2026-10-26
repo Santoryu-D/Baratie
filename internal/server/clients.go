@@ -11,13 +11,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/V3x0rV3x/D3X/internal/client"
-	"github.com/V3x0rV3x/D3X/internal/config"
-	"github.com/V3x0rV3x/D3X/internal/crossseed"
-	"github.com/V3x0rV3x/D3X/internal/pathmap"
+	"baratie/internal/client"
+	"baratie/internal/config"
+	"baratie/internal/pathmap"
+	"baratie/internal/seed"
 )
 
-// Plusieurs clients torrent (une seedbox et ce PC, par exemple). Chacun est
+// Plusieurs clients torrent (une seedbox et un NAS, par exemple). Chacun est
 // joint à part : un client injoignable est signalé, les autres servent.
 
 // clientConn : un client des réglages, joint (c non nil) ou non (err).
@@ -43,9 +43,9 @@ func dial(ctx context.Context, cc config.ClientConfig) *clientConn {
 	}
 	ver, err := c.Version(ctx)
 	if err != nil {
-		k.err = crossseed.Reason(err)
+		k.err = seed.Reason(err)
 		if ctx.Err() != nil {
-			k.err = crossseed.NoAnswer
+			k.err = seed.NoAnswer
 		}
 		return k
 	}
@@ -72,37 +72,6 @@ func dialAll(ctx context.Context, list []config.ClientConfig) map[string]*client
 	}
 	wg.Wait()
 	return out
-}
-
-// retryClients retente les clients injoignables (début d'une analyse) : le
-// client d'une seedbox redémarré depuis le lancement de D3X revient sans
-// passer par les réglages.
-func (s *Server) retryClients(ctx context.Context) {
-	s.mu.Lock()
-	var todo []config.ClientConfig
-	for _, cc := range s.cfg.Clients {
-		if k := s.conns[cc.ID]; k == nil || k.c == nil || k.sig != connSig(cc) {
-			todo = append(todo, cc)
-		}
-	}
-	s.mu.Unlock()
-	if len(todo) == 0 {
-		return
-	}
-	c, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	got := dialAll(c, todo)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.conns == nil {
-		s.conns = map[string]*clientConn{}
-	}
-	for id, k := range got {
-		// Réglages changés entre-temps : le résultat ne vaut plus.
-		if cc := s.cfg.Client(id); cc != nil && connSig(*cc) == k.sig {
-			s.conns[id] = k
-		}
-	}
 }
 
 // clientLabels : le nom affiché de chaque client (par identifiant) : celui
@@ -141,50 +110,43 @@ func hostOf(raw string) string {
 	return strings.ToLower(u.Hostname())
 }
 
-// env fournit au moteur et à la publication V3X, les réglages et les clients
-// joignables (les autres sont signalés). Erreur si V3X n'est pas joint ou si
-// aucun client ne l'est.
-func (s *Server) env() (*crossseed.Env, error) {
+// env fournit à la publication le tracker, les réglages et les clients
+// joignables (les autres sont signalés). Erreur sans tracker relié ou sans
+// client joignable.
+func (s *Server) env() (*seed.Env, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.v == nil || s.me == nil {
-		return nil, errors.New("D3X n'est pas connecté à V3X : vérifie ta clé API dans les réglages")
+	trk := s.connectedTracker()
+	if trk == nil {
+		if t, _, msg := s.trk.get(); t != nil {
+			if msg == "" {
+				msg = "connexion en cours"
+			}
+			return nil, errors.New("Baratie n'est pas connecté à " + t.Name() + " : " + msg)
+		}
+		return nil, errors.New("Baratie n'est relié à aucun tracker : règle-le dans les réglages")
 	}
 	c := *s.cfg
-	out := &crossseed.Env{V3X: s.v, Cfg: &c}
+	out := &seed.Env{Tracker: trk, Cfg: &c}
 	labels := clientLabels(c.Clients)
 	for _, cc := range c.Clients {
 		k := s.conns[cc.ID]
 		switch {
 		case k == nil || k.sig != connSig(cc):
-			out.Down = append(out.Down, crossseed.Down{ID: cc.ID, Name: labels[cc.ID], Error: "connexion en cours"})
+			out.Down = append(out.Down, seed.Down{ID: cc.ID, Name: labels[cc.ID], Error: "connexion en cours"})
 		case k.c == nil:
-			out.Down = append(out.Down, crossseed.Down{ID: cc.ID, Name: labels[cc.ID], Error: k.err})
+			out.Down = append(out.Down, seed.Down{ID: cc.ID, Name: labels[cc.ID], Error: k.err})
 		default:
-			out.Targets = append(out.Targets, crossseed.Target{ID: cc.ID, Name: labels[cc.ID], Client: k.c, PathMap: cc.PathMap, LinksDir: strings.TrimSpace(cc.LinksDir), Host: hostOf(cc.URL)})
+			out.Targets = append(out.Targets, seed.Target{ID: cc.ID, Name: labels[cc.ID], Client: k.c, PathMap: cc.PathMap, Host: hostOf(cc.URL)})
 		}
 	}
 	if len(out.Targets) == 0 {
 		if len(out.Down) == 0 {
-			return nil, errors.New("D3X n'est pas connecté à ton client torrent : vérifie les réglages")
+			return nil, errors.New("Baratie n'a aucun client torrent : ajoute-le dans les réglages")
 		}
-		return nil, errors.New(crossseed.DownText(out.Down))
+		return nil, errors.New(seed.DownText(out.Down))
 	}
 	return out, nil
-}
-
-// ready : de quoi lancer une analyse (V3X joint, au moins un client réglé ;
-// les clients injoignables sont retentés au début de l'analyse).
-func (s *Server) ready() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.v == nil || s.me == nil {
-		return errors.New("D3X n'est pas connecté à V3X : vérifie ta clé API dans les réglages")
-	}
-	if len(s.cfg.Clients) == 0 {
-		return errors.New("D3X n'est pas connecté à ton client torrent : vérifie les réglages")
-	}
-	return nil
 }
 
 // clientOut : un client pour la page (jamais son mot de passe).
@@ -202,7 +164,6 @@ type clientOut struct {
 	Insecure bool           `json:"insecure"`
 	HasPass  bool           `json:"hasPass"`
 	PathMap  []pathmap.Rule `json:"pathMap"`
-	LinksDir string         `json:"linksDir,omitempty"`
 }
 
 // clientsOut : les clients des réglages et leur état (verrou tenu).
@@ -210,7 +171,7 @@ func (s *Server) clientsOut() []clientOut {
 	out := []clientOut{}
 	labels := clientLabels(s.cfg.Clients)
 	for _, cc := range s.cfg.Clients {
-		x := clientOut{ID: cc.ID, Name: cc.Name, Label: labels[cc.ID], Kind: cc.Kind, URL: maskURL(cc.URL), User: cc.User, Insecure: cc.Insecure, HasPass: cc.Pass != "", PathMap: append([]pathmap.Rule{}, cc.PathMap...), LinksDir: cc.LinksDir}
+		x := clientOut{ID: cc.ID, Name: cc.Name, Label: labels[cc.ID], Kind: cc.Kind, URL: maskURL(cc.URL), User: cc.User, Insecure: cc.Insecure, HasPass: cc.Pass != "", PathMap: append([]pathmap.Rule{}, cc.PathMap...)}
 		if x.Kind == "" {
 			x.Kind = "qbittorrent"
 		}
@@ -235,7 +196,6 @@ type clientIn struct {
 	Pass     string         `json:"pass"`
 	Insecure bool           `json:"insecure"`
 	PathMap  []pathmap.Rule `json:"pathMap"`
-	LinksDir string         `json:"linksDir"`
 }
 
 // mergeClients forme la nouvelle liste des clients d'après la page. Un client
@@ -261,7 +221,7 @@ func mergeClients(old []config.ClientConfig, in []clientIn) ([]config.ClientConf
 			return nil, errors.New("client inconnu : " + kind)
 		}
 		prev, known := byID[x.ID]
-		cc := config.ClientConfig{ID: x.ID, Kind: kind, User: strings.TrimSpace(x.User), Insecure: x.Insecure, LinksDir: strings.TrimSpace(x.LinksDir)}
+		cc := config.ClientConfig{ID: x.ID, Kind: kind, User: strings.TrimSpace(x.User), Insecure: x.Insecure}
 		if !known || ids[x.ID] {
 			cc.ID = config.NewClientID()
 		}

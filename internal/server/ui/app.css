@@ -1,8 +1,8 @@
 /* ==================================================================
-   D3X reprend l'identité de V3X : mêmes polices, mêmes fonds (sombre,
+   Thème clair ou sombre, mêmes polices partout (sombre,
    jour, bleu nuit), mêmes accents au choix du membre, même barre latérale.
    Variables du site (globals.css) recopiées ici ; html[data-theme] et
-   html[data-accent] sont posés par theme.js puis par l'état de D3X.
+   html[data-accent] sont posés par theme.js puis par l'état de Baratie.
    ================================================================== */
 
 @font-face { font-family: "Bricolage Grotesque"; src: url("vendor/fonts/bricolage-grotesque-latin.woff2") format("woff2"); font-weight: 200 800; font-display: swap; }
@@ -301,6 +301,9 @@ span.req { cursor: help; }
 .actionbar .sel { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .actionbar .how { margin: 0; color: var(--muted); font-size: 12.5px; flex: 1; }
 .actionbar .btn { flex: none; }
+/* Baratie : un blocage long passe sur deux lignes et remplace l'explication. */
+.actionbar.blocked .sel { white-space: normal; flex: 1; min-width: 0; color: var(--bad); }
+.actionbar.blocked .how { display: none; }
 
 /* ---------- historique ---------- */
 .history { list-style: none; padding: 0; margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
@@ -322,11 +325,11 @@ dialog form { padding: 22px 24px; max-height: calc(100vh - 48px); overflow-y: au
 fieldset { border: 0; padding: 0; margin: 0 0 18px; }
 legend { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 8px; padding: 0; }
 label { display: block; font-size: 13px; font-weight: 550; margin: 8px 0 4px; }
-input[type="text"], input[type="password"], #ssh-set input[type="number"] {
+input[type="text"], input[type="password"], input[type="number"], input[type="search"] {
   width: 100%; font: 15px var(--sans); color: var(--ink); background: var(--ground);
   border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px;
 }
-input[type="text"]:focus, input[type="password"]:focus, #ssh-set input[type="number"]:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, input[type="search"]:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); vertical-align: -3px; }
 label.check { font-weight: 400; display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -373,6 +376,7 @@ input:disabled { opacity: .5; }
 .toast { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; padding: 10px 14px; box-shadow: var(--shadow); font-size: 14px; }
 .toast.bad { border-left-color: var(--bad); }
 .toast.ok { border-left-color: var(--ok); }
+.toast.warn { border-left-color: var(--warn); }
 
 /* ---------- publier ---------- */
 .card {
@@ -464,7 +468,7 @@ tr.risk-warn td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 .span2 { grid-column: 1 / -1; }
 .opts { display: flex; gap: 18px; flex-wrap: wrap; }
 label.check.inline { margin-top: 0; display: inline-flex; align-items: center; font-weight: 400; }
-/* Filtre de « Pas sur V3X » : teams qui interdisent le réupload. */
+/* Filtre des teams qui interdisent le réupload. */
 label.check.small { margin: 0 0 10px; align-items: center; font-size: 13px; color: var(--muted); }
 .tokens { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .tok { font-size: 12px; background: var(--sunk); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
@@ -521,7 +525,7 @@ input.tool.color { width: 34px; height: 28px; padding: 2px; border-color: var(--
 .ed-panes textarea:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent-soft); }
 .preview { padding: 14px 16px; overflow: auto; max-height: 720px; background: var(--surface); border-radius: 0 0 10px 0; min-width: 0; }
 .preview img { max-width: 100%; height: auto; }
-/* Présentation HTML : rendue comme sur V3X, sur le fond sombre des fiches. */
+/* Présentation HTML : rendue sur le fond sombre des fiches. */
 .preview.html-prev { padding: 0; background: #0e0e13; }
 .preview.html-prev iframe { display: block; width: 100%; height: 420px; border: 0; }
 details.nfo { margin-top: 14px; }
@@ -584,6 +588,62 @@ dialog .confirm dd { margin: 0; word-break: break-word; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
-/* Filtre texte des listes (quebecman, 21/10/26). */
+/* Filtre texte des listes. */
 .list-filter { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
 .list-filter input[type="text"] { max-width: 440px; font-size: 14px; padding: 7px 10px; }
+
+/* Le nom « Baratie » est long : le logo se resserre */
+.wordmark.baratie { font-size: 17px; letter-spacing: -.02em; }
+
+/* Baratie : fiche du tracker */
+.tokens { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tokens .tok { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--sunk); color: var(--muted); }
+.tokens .tok b { color: var(--ink); font-weight: 600; }
+#trk-blockers ul, #trk-warnings ul { margin: 4px 0 0; padding-left: 18px; }
+.versions li.same .tag { background: var(--bad-soft); color: var(--bad); }
+.versions li .tag.dupe { background: var(--bad-soft); color: var(--bad); }
+.trk-form { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; max-height: 55vh; overflow: auto; font-size: 13px; }
+.trk-form dt { color: var(--muted); font-family: var(--mono); }
+.trk-form dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; max-height: 9em; overflow: auto; }
+#trk-f-mi { font-family: var(--mono); font-size: 12px; }
+#trk-form details summary { cursor: pointer; font-weight: 600; }
+#trk-form textarea { width: 100%; box-sizing: border-box; }
+#trk-form .row input[type="number"] { flex: 1; min-width: 0; }
+
+/* Baratie : Garde-manger */
+.pm-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 10px; }
+.pm-chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 5px 12px; font: 600 12.5px var(--sans); cursor: pointer; }
+.pm-chip b { font-variant-numeric: tabular-nums; margin-left: 4px; }
+.pm-chip[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.pm-tools { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.pm-tools input { flex: 1; min-width: 200px; }
+.pm-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.pm-item { display: grid; grid-template-columns: 14px 1fr auto; gap: 4px 12px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.pm-item.ignored { opacity: .55; }
+.pm-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; background: var(--line); }
+.pm-dot.absent { background: var(--ok); }
+.pm-dot.complement { background: #e0a800; }
+.pm-dot.maybe { background: #e8730c; }
+.pm-dot.evaluate { background: #e0a800; opacity: .6; }
+.pm-dot.identical { background: #3b82f6; }
+.pm-dot.excluded { background: var(--bad); }
+.pm-dot.unknown { background: transparent; border: 2px dashed var(--muted); width: 8px; height: 8px; }
+.pm-main { min-width: 0; }
+.pm-main .pm-name { font-weight: 600; overflow-wrap: anywhere; }
+.pm-main .pm-sub { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.pm-main .pm-why { font-size: 12.5px; margin-top: 2px; }
+.pm-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pm-cands { grid-column: 2 / 4; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.pm-cands input { width: 220px; }
+@media (max-width: 720px) { .pm-item { grid-template-columns: 14px 1fr; } .pm-acts { grid-column: 2; justify-content: flex-start; } }
+.pm-libs { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+.pm-libs-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pm-libs-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; margin: 8px 0; }
+#pm-libs-box .row { margin-top: 8px; gap: 8px; }
+#pm-libs-other { flex: 1; }
+.trk-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 8px; }
+.trk-shots-info { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.trk-shots-info .warn { color: var(--warn); }
+.trk-shot { border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--ground); display: flex; flex-direction: column; gap: 4px; }
+.trk-shot img { width: 100%; height: auto; border-radius: 5px; background: var(--sunk); }
+.trk-shot .row { justify-content: space-between; align-items: center; font-size: 12px; }

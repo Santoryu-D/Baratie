@@ -1,14 +1,12 @@
 # Binaires compilés
-/d3x
-/d3x.exe
+/baratie
+/baratie.exe
 /dist/
 *.exe
 *.test
 *.out
-*.syso
 
-# Agents pour seedbox, produits à la compilation
-internal/remote/agents/*.gz
-
-# Captures du README (sortie de scripts/captures/run.sh)
-scripts/captures/out/
+# Données locales (ne jamais publier)
+/config/
+regles.json
+*.log

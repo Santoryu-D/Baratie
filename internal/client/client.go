@@ -14,7 +14,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"baratie/internal/torrent"
 )
 
 // Torrent est un torrent du client, sous une forme commune.
@@ -30,9 +30,6 @@ type Torrent struct {
 	Downloading bool    // cherche à recevoir des données
 	Stopped     bool    // arrêté (ne seede pas)
 	Trackers    []string
-	// Category : la catégorie du torrent dans le client (qBittorrent ; vide
-	// ailleurs). Sert au modèle {cat} de la catégorie des cross-seeds.
-	Category string
 }
 
 // AddOptions règle un ajout (toujours à l'arrêt).

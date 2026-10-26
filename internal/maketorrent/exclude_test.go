@@ -3,7 +3,7 @@ package maketorrent
 import "testing"
 
 // Dossiers système écartés d'office, même avec une liste d'exclusions vide
-// (corbeille Windows illisible à la racine d'un disque, Maxxi37 21/10/26).
+// (corbeille Windows illisible à la racine d'un disque).
 func TestSystemDirsExcluded(t *testing.T) {
 	for _, n := range []string{"$RECYCLE.BIN", "System Volume Information", "@eaDir", "#recycle", "lost+found"} {
 		if !Excluded(n, nil) {

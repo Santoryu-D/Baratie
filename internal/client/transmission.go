@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"baratie/internal/torrent"
 )
 
 // Transmission, par son RPC JSON (« /transmission/rpc »). Pas d'export du

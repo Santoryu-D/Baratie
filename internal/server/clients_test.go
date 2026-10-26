@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,11 +8,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/V3x0rV3x/D3X/internal/config"
-	"github.com/V3x0rV3x/D3X/internal/pathmap"
-	"github.com/V3x0rV3x/D3X/internal/qbit"
+	"baratie/internal/config"
+	"baratie/internal/pathmap"
+	"baratie/internal/qbit"
 )
 
 // fakeQbitServer : un faux qBittorrent qui accepte le mot de passe pass et
@@ -80,34 +78,17 @@ func call(t *testing.T, s *Server, method, path string, body interface{}) (int, 
 // adresse, et « Mon seed » prudent quand un client ne répond pas.
 func TestClientsSettings(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("AppData", tmp)
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-	t.Setenv("HOME", tmp)
+	t.Setenv("BARATIE_CONFIG", tmp)
 
-	pc, _ := fakeQbitServer(t, "motdepasse-pc", []qbit.Torrent{
-		{Hash: "cccccccccccccccccccccccccccccccccccccccc", Name: "Release.V3X", ContentPath: "/data/Release.V3X", Progress: 1, State: "stoppedUP", MagnetURI: "magnet:?xt=urn:btih:cc&tr=https%3A%2F%2Fannounce.v3x.club%2Fannounce"},
-	})
+	pc, _ := fakeQbitServer(t, "motdepasse-pc", nil)
 	box, boxSeen := fakeQbitServer(t, "un-autre", nil) // refuse le mot de passe enregistré
-	vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/me":
-			io.WriteString(w, `{"username":"membre","ratio":1,"hitAndRun":0}`)
-		case "/api/d3x/seed-status":
-			deadline := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
-			io.WriteString(w, `{"hnr":{"enabled":true,"items":[{"torrentId":"t1","name":"Absente.Du.PC","infoHash":"dddddddddddddddddddddddddddddddddddddddd","seedSeconds":0,"requiredSeconds":3600,"deadline":"`+deadline+`"}]},"relays":{"items":[]}}`)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer vs.Close()
 
 	cfg := config.Defaults()
-	cfg.V3XBase, cfg.V3XKey = vs.URL, "cle"
 	cfg.Clients = []config.ClientConfig{
-		{ID: "pc", Name: "PC", URL: pc.URL, User: "admin", Pass: "motdepasse-pc", PathMap: []pathmap.Rule{{From: `D:\Torrents`, To: "/data"}}},
+		{ID: "pc", Name: "PC", URL: pc.URL, User: "admin", Pass: "motdepasse-pc", PathMap: []pathmap.Rule{{From: `/data/films`, To: "/downloads/films"}}},
 		{ID: "box", Name: "Seedbox", Kind: "qbittorrent", URL: box.URL, User: "moi", Pass: "motdepasse-box"},
 	}
-	s := NewWith("test", cfg, "jeton-de-test-0123456789abcdef", 8733, Options{})
+	s := New("test", cfg, "jeton-de-test-0123456789abcdef", 8733, Options{})
 	s.connect()
 
 	code, st, raw := call(t, s, "GET", "/ui/state", nil)
@@ -129,19 +110,6 @@ func TestClientsSettings(t *testing.T) {
 		t.Fatalf("Seedbox : %v", b)
 	}
 
-	// Mon seed : la release absente du PC n'est pas « absente » (la seedbox
-	// ne répond pas), et ne fait pas sonner l'alarme.
-	view, err := s.buildSeed(context.Background(), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(view.Warn, "Seedbox injoignable") || len(view.Items) != 1 || view.Items[0].Client != SeedUnknown || view.Items[0].Risk == "bad" {
-		t.Fatalf("seed : %q %+v", view.Warn, view.Items)
-	}
-	if len(view.Stopped) != 1 || view.Stopped[0].Where != "PC" {
-		t.Fatalf("arrêtées : %+v", view.Stopped)
-	}
-
 	// Essai d'un client sans l'enregistrer : le mot de passe gardé ne part
 	// qu'à la même adresse.
 	if code, out, _ := call(t, s, "POST", "/ui/client/test", map[string]interface{}{"id": "pc", "url": pc.URL, "user": "admin"}); code != 200 || out["ok"] != true {
@@ -161,10 +129,10 @@ func TestClientsSettings(t *testing.T) {
 	// une autre adresse ; un client neuf reçoit son identifiant.
 	nas, _ := fakeQbitServer(t, "nas", nil)
 	in := map[string]interface{}{"clients": []map[string]interface{}{
-		{"id": "pc", "name": "PC", "url": pc.URL, "user": "admin", "pathMap": []pathmap.Rule{{From: `D:\Torrents`, To: "/data"}}},
+		{"id": "pc", "name": "PC", "url": pc.URL, "user": "admin", "pathMap": []pathmap.Rule{{From: `/data/films`, To: "/downloads/films"}}},
 		{"id": "box", "name": "Seedbox", "url": box.URL + "/autre", "user": "moi"},
 		{"id": "nouveau", "name": "NAS", "kind": "transmission", "url": nas.URL, "pass": "nas"},
-	}, "watch": map[string]interface{}{"notify": true}}
+	}}
 	if code, _, raw := call(t, s, "POST", "/ui/settings", in); code != 200 || strings.Contains(raw, "motdepasse") {
 		t.Fatalf("réglages : %d %s", code, raw)
 	}
@@ -178,8 +146,8 @@ func TestClientsSettings(t *testing.T) {
 	if id := saved.Clients[2].ID; id == "" || id == "nouveau" || id == "pc" || id == "box" {
 		t.Fatalf("identifiant du client neuf : %q", id)
 	}
-	if saved.QbitURL != pc.URL || saved.QbitPass != "motdepasse-pc" || len(saved.PathMap) != 1 {
-		t.Fatalf("anciens champs : %q %q %v", saved.QbitURL, saved.QbitPass, saved.PathMap)
+	if len(saved.Clients[0].PathMap) != 1 {
+		t.Fatalf("dossiers : %v", saved.Clients[0].PathMap)
 	}
 
 	// Refus : deux fois le même nom, plus de huit clients.
@@ -193,52 +161,6 @@ func TestClientsSettings(t *testing.T) {
 	}
 	if code, out, _ := call(t, s, "POST", "/ui/settings", map[string]interface{}{"clients": many}); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "8 clients") {
 		t.Fatalf("neuf clients : %d %v", code, out)
-	}
-}
-
-// Deux D3X séparés, chacun avec son client (MrCryllix, 25/10/26) : une release
-// seedée par l'autre machine, que le tracker voit en seed, n'est pas « absente ».
-func TestSeedElsewhere(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("AppData", tmp)
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-	t.Setenv("HOME", tmp)
-
-	pc, _ := fakeQbitServer(t, "motdepasse-pc", nil)
-	vs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/me":
-			io.WriteString(w, `{"username":"membre","ratio":1,"hitAndRun":0}`)
-		case "/api/d3x/seed-status":
-			deadline := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
-			io.WriteString(w, `{"hnr":{"enabled":true,"items":[`+
-				`{"torrentId":"t1","name":"Ailleurs","infoHash":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","seedSeconds":0,"requiredSeconds":3600,"deadline":"`+deadline+`","seedingNow":true},`+
-				`{"torrentId":"t2","name":"Nulle.Part","infoHash":"ffffffffffffffffffffffffffffffffffffffff","seedSeconds":0,"requiredSeconds":3600,"deadline":"`+deadline+`","seedingNow":false}]},"relays":{"items":[]}}`)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer vs.Close()
-
-	cfg := config.Defaults()
-	cfg.V3XBase, cfg.V3XKey = vs.URL, "cle"
-	cfg.Clients = []config.ClientConfig{{ID: "pc", Name: "PC", URL: pc.URL, User: "admin", Pass: "motdepasse-pc"}}
-	s := NewWith("test", cfg, "jeton-de-test-0123456789abcdef", 8733, Options{})
-	s.connect()
-
-	view, err := s.buildSeed(context.Background(), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := map[string]seedItem{}
-	for _, x := range view.Items {
-		got[x.Name] = x
-	}
-	if x := got["Ailleurs"]; x.Client != SeedElsewhere || x.Risk != "ok" {
-		t.Fatalf("seedée par l'autre machine : %+v", x)
-	}
-	if x := got["Nulle.Part"]; x.Client != SeedMissing || x.Risk == "ok" {
-		t.Fatalf("vraiment absente : %+v", x)
 	}
 }
 

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/V3x0rV3x/D3X/internal/bencode"
-	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"baratie/internal/bencode"
+	"baratie/internal/torrent"
 )
 
 func setEnv(t *testing.T) string {
@@ -36,7 +36,7 @@ func write(t *testing.T, path string, n int, seed int64) []byte {
 
 func TestScanHashAndCache(t *testing.T) {
 	setEnv(t)
-	dir := filepath.Join(t.TempDir(), "Ma.Release.2024.1080p-D3X")
+	dir := filepath.Join(t.TempDir(), "Ma.Release.2024.1080p-GRP")
 	var all []byte
 	// Ordre attendu dans le torrent : par segments de chemin.
 	all = append(all, write(t, filepath.Join(dir, "Ma.Release.mkv"), 3_000_123, 1)...)
@@ -57,7 +57,7 @@ func TestScanHashAndCache(t *testing.T) {
 		t.Fatalf("écartés : %v", p.Skipped)
 	}
 	p.PieceLength = 64 << 10 // plusieurs pièces, dont une à cheval sur deux fichiers
-	raw, cached, err := p.Hash(context.Background(), "D3X test", nil)
+	raw, cached, err := p.Hash(context.Background(), "Baratie test", nil)
 	if err != nil || cached {
 		t.Fatalf("Hash : %v (cache %v)", err, cached)
 	}
@@ -82,12 +82,12 @@ func TestScanHashAndCache(t *testing.T) {
 	if !bytes.Equal(info["pieces"].([]byte), want) {
 		t.Fatal("pièces différentes d'un calcul simple, octet par octet")
 	}
-	if string(info["source"].([]byte)) != "V3X" || info["private"].(int64) != 1 {
-		t.Fatal("source V3X et drapeau privé attendus")
+	if string(info["source"].([]byte)) != Source || info["private"].(int64) != 1 {
+		t.Fatal("source Baratie et drapeau privé attendus")
 	}
 
 	// Deuxième fois : repris du cache, identique.
-	raw2, cached, err := p.Hash(context.Background(), "D3X test", nil)
+	raw2, cached, err := p.Hash(context.Background(), "Baratie test", nil)
 	if err != nil || !cached || !bytes.Equal(raw, raw2) {
 		t.Fatalf("cache : %v %v", err, cached)
 	}
@@ -96,7 +96,7 @@ func TestScanHashAndCache(t *testing.T) {
 	write(t, filepath.Join(dir, "Sous-titres", "fr.srt"), 4_321, 99)
 	p2, _ := Scan(dir, DefaultExclude)
 	p2.PieceLength = p.PieceLength
-	if _, cached, _ := p2.Hash(context.Background(), "D3X test", nil); cached {
+	if _, cached, _ := p2.Hash(context.Background(), "Baratie test", nil); cached {
 		t.Fatal("un fichier modifié ne doit pas resservir l'ancien .torrent")
 	}
 }

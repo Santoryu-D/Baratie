@@ -1,277 +1,300 @@
-# D3X
+<p align="center">
+  <img src="internal/server/ui/favicon.svg" width="72" alt="">
+</p>
 
-L'outil de bureau des membres de [V3X](https://v3x.club).
+<h1 align="center">Baratie</h1>
 
-![Cross-seed avec D3X : le client est analysé, trois releases cochées sont ajoutées, vérifiées, puis mises en seed ; celle dont les fichiers diffèrent reste à l'arrêt](docs/images/cross-seed.gif)
+<p align="center">
+  <b>Publication assistée de films vers un tracker UNIT3D.</b><br>
+  Tu choisis une release, Baratie prépare la fiche, vérifie les règles de ton tracker,<br>
+  publie sur ton clic et met la release en seed dans ton client torrent.
+</p>
 
-- **Cross-seed** : D3X regarde ce que ton client torrent seede déjà pour d'autres trackers, retrouve sur V3X les releases identiques et les ajoute sur **les mêmes fichiers**. Tu seedes pour V3X sans rien retélécharger ni dupliquer sur ton disque. Les releases mortes et les relais primés passent en tête ; celles qui manquent à V3X se publient d'un clic, et celles qu'un membre demande sont signalées avec leur prime.
-- **Médiathèque** : tes films et séries rangés et renommés, sans leur .torrent, retrouvés sur V3X et vérifiés morceau par morceau sur ton disque.
-- **Mon seed** : ce que V3X attend de ton seed (hit and run à éviter, relais à reprendre) comparé à ce que fait vraiment ton client.
-- **Surveillance** : D3X relance l'analyse tout seul, te prévient des nouvelles releases à cross-seeder et d'un hit and run en vue, et peut ajouter seul les releases identiques.
-- **Publier** : tu choisis un dossier ou un fichier, sur ce PC ou sur ta seedbox, D3X fabrique le .torrent là où sont les fichiers pendant que tu remplis la fiche, que V3X prépare exactement comme sur sa page d'upload. Une fois publiée, la release part en seed dans ton client, sur les mêmes fichiers.
-- **Musique** : D3X lit les tags et la qualité des pistes, retrouve l'album dans MusicBrainz en comparant les durées, et prépare la fiche album du site.
-- **Jeux vidéo** : dans Jeux vidéo ou Émulation, tu cherches le jeu par son titre ; titre, jaquette et fiche jeu du site (genres, studios, config requise) se remplissent, comme sur la page d'upload.
-- **Livres** : dans Ebook (ou pour une release faite de .epub, .pdf…), le lien Open Library du livre ou son ISBN remplit titre, auteur, couverture et fiche livre, comme sur la page d'upload. Il est facultatif : un livre introuvable (sortie récente, petite édition) se publie sans, en choisissant soi-même la sous-catégorie.
-- **Lot** : un dossier entier passé au crible. D3X ne publie seul que ce qui est sûr ; le reste attend ta revue.
+<p align="center">
+  <sub>Fork de <a href="https://github.com/V3x0rV3x/D3X">D3X</a>, l'outil de la communauté V3X, repensé pour les trackers UNIT3D.</sub>
+</p>
 
-Clients pris en charge : **qBittorrent**, **Transmission**, **Deluge** et **rTorrent** (ruTorrent), sur ce PC, un NAS ou une seedbox, et [plusieurs à la fois](#plusieurs-clients) (une seedbox et ce PC, par exemple).
+<p align="center">
+  <img src="docs/captures/02-release.png" width="860" alt="Une release prête à publier">
+</p>
 
-## Ce que fait D3X, et ce qu'il ne fait jamais
+---
 
-- **Il ne modifie ni ne supprime aucun de tes fichiers.** Pour publier, il lit tes fichiers (hachage, MediaInfo) ; pour le reste, tout passe par l'interface web de ton client. Sur une seedbox, il n'écrit que son agent dans `~/.d3x` et son cache de hachage dans `~/.config/D3X`. Seule exception, si tu l'actives : les [liens](#les-liens) (physiques ou symboliques), créés dans un dossier que tu choisis, sans jamais rien écraser.
-- **Il ne télécharge rien à ta place.** Chaque release est ajoutée *à l'arrêt*, ton client vérifie les données, et D3X ne la démarre que si elle est complète à 100 %. Sinon elle reste arrêtée, avec un bouton pour la retirer (fichiers intacts ; avec rTorrent, D3X l'arrête et te laisse la retirer, car rTorrent peut être réglé pour effacer les données au retrait).
-- **Cross-seed : il n'envoie à V3X que des empreintes.** Pour chaque torrent de ton client, D3X calcule chez toi deux empreintes (SHA-256 des chemins et des tailles, puis des tailles seules). Aucun nom de fichier, aucun chemin, aucun info-hash d'un autre tracker ne quitte ta machine.
-- **Correspondance exacte seulement.** Une release n'est proposée que si ses fichiers ont exactement les mêmes tailles que sur V3X, fichier par fichier, et les mêmes noms (sinon elle va dans « Noms différents »), jamais sur la seule taille totale ni sur une ressemblance de nom. Pour une petite release (moins de 100 Mio), un nom qui ne diffère que par les majuscules ou la ponctuation passe aussi en « Noms différents ». Le .torrent reçu de V3X est revérifié avant l'ajout, et le client vérifie chaque octet avant tout démarrage.
-- **Médiathèque : seules les tailles des gros fichiers partent vers V3X** (plus de 50 Mio), jamais un nom ni un chemin. Les .torrent des releases trouvées sont ensuite comparés à tes fichiers chez toi.
-- **Musique : seuls l'artiste et le titre de l'album partent vers [MusicBrainz](https://musicbrainz.org)** (base ouverte de la musique), interrogée directement, une requête par seconde comme elle le demande.
-- **Publier : il envoie ce que tu enverrais sur le site**, le .torrent et la fiche (nom, catégorie, présentation, NFO avec le MediaInfo, sans aucun chemin local). Tes fichiers ne sont jamais envoyés à V3X.
+## Sommaire
 
-Le code est ouvert : tu peux vérifier tout ce qui précède avant de lancer l'outil. Les appels au site sont tous dans [`internal/v3x`](internal/v3x).
+- [Ce que fait Baratie](#ce-que-fait-baratie)
+- [Ce qu'il ne fait jamais](#ce-quil-ne-fait-jamais)
+- [Visite guidée](#visite-guidée)
+- [Installation](#installation)
+- [Premier lancement](#premier-lancement)
+- [Le fichier de règles de ton tracker](#le-fichier-de-règles-de-ton-tracker)
+- [Seed par liens physiques](#seed-par-liens-physiques)
+- [Variables d'environnement](#variables-denvironnement)
+- [Sécurité](#sécurité)
+- [Compiler soi-même](#compiler-soi-même)
+- [Crédits et licence](#crédits-et-licence)
 
-## Cross-seed
+---
 
-L'analyse range tes releases en onglets :
+## Ce que fait Baratie
 
-- **À ajouter** : identiques sur V3X. Les **relais** passent en tête (releases rares lâchées par un membre : une prime en jetons aux premiers qui la reprennent, après 24 h de seed), puis les **releases mortes** (plus aucun seeder depuis trois jours : ton seed les ramène, et la prime de résurrection tombe une fois qu'elles ont servi).
-- **Noms différents** : les mêmes fichiers sous d'autres noms (voir les [questions](#questions)).
-- **Pas sur V3X** : ce que tu seedes ailleurs et qui manque à V3X. « Publier » ouvre la fiche d'une release, ou coches-en plusieurs pour les passer au crible du lot. Celles qui répondent à une **demande ouverte** sur le site sont en tête, avec la prime ; une fois ta release publiée et validée, D3X la propose au demandeur d'un clic. Une release seedée plusieurs fois (un torrent par tracker, sur des liens physiques) n'y apparaît qu'une fois, avec son nombre de copies (×2, ×3…). Celles d'une team qui interdit le réupload, ou le soumet à son accord, portent une pastille qui le dit, comme celles d'un **groupe refusé sur V3X** (avec la raison donnée par le site), et une case masque celles que V3X refusera.
-- **Autres** :
-  - **Même vidéo sur V3X** : le plus gros fichier de ta copie, une vidéo de 200 Mio ou plus, existe à l'octet près dans une fiche V3X, sous une autre forme (nom refait, .nfo en plus, dossier au lieu d'un fichier seul). Rien ne manque au site, rien à publier. Pour une image disque (`.iso`, souvent un jeu), la taille ne suffit pas : il faut aussi le même nom de release, ou une image au même nom de fichier que celle de la fiche, et la ligne devient **Même fichier sur V3X**.
-  - **Absente du disque** : le client croit la copie complète, mais ses fichiers ne sont plus là (supprimés, ou déplacés par un outil de médiathèque). D3X ne l'ajoute pas.
-  - **Retirée de V3X** : aucune fiche en ligne, mais V3X a retiré (ou remplacé, archivé) une fiche de ce contenu. D3X ne la propose pas à la publication ; le motif s'affiche si c'était ta fiche. Publier reste possible si la raison ne s'applique plus.
+Baratie est un petit serveur web (un seul binaire, ou une image Docker) qui tourne **là où sont tes fichiers** : NAS, seedbox, serveur maison ou PC. Tu l'ouvres dans ton navigateur.
 
-Au-dessus de la liste, **Filtrer** ne garde que les releases dont le nom contient tous tes mots ; un mot précédé de « - » les écarte (`1080p MULTi -720p`, ou le tag d'une team). « Tout cocher » ne prend que ce qui est affiché.
+- **Fiche préparée toute seule** : titre, catégorie, type, résolution, identifiants TMDB et IMDB, MediaInfo, NFO, description BBCode… d'après le nom de la release, ses pistes et TMDB. Tout reste modifiable avant l'envoi.
+- **Règles de ton tracker vérifiées avant l'envoi** : teams interdites, mentions refusées (CAM, HDLight…), sous-titres français pour une VO, langue originale pour un MULTi, conteneur, encodeur, débits minimum… Un blocage empêche la publication, un avertissement te laisse décider. Les règles viennent d'un [fichier JSON](#le-fichier-de-règles-de-ton-tracker) que tu adaptes à ton tracker.
+- **Doublons repérés** : Baratie liste ce que le tracker a déjà pour ce film et te dit si ta release est un doublon, une nouvelle combinaison (autre source, résolution ou codec) ou une amélioration.
+- **Captures d'écran** : 4 captures PNG prises par ffmpeg (HDR converti en SDR, sans sous-titres), à refaire une par une, hébergées sur imgbb **seulement si tu le demandes**, et vérifiées à travers le relais d'images d'UNIT3D pour ne pas finir en vignettes cassées.
+- **Seed automatique** : après publication, le .torrent du tracker est ajouté à ton client (qBittorrent, Transmission, Deluge ou rTorrent), vérifié, puis mis en seed. Avec un [dossier de seed](#seed-par-liens-physiques), la release est recréée en liens physiques au nom exact de la fiche : tes fichiers d'origine ne bougent pas.
+- **Garde-manger** : Baratie compare ta médiathèque à ce que le tracker possède déjà et te dit quels films manquent, lesquels apporteraient une nouvelle version, et lesquels sont déjà là.
+- **Historique** de ce qui a été publié et mis en seed.
+- Thème clair ou sombre, interface en français.
 
-Une release classée d'une façon qui te surprend : **Diagnostic** affiche ce que D3X en sait (nom, fichiers et tailles, ce qu'il en a conclu), sans info-hash ni chemin sur ton disque, prêt à copier pour le staff.
+## Ce qu'il ne fait jamais
 
-Une release que tu ne veux pas seeder pour l'instant : **Ignorer** la retire de la liste et de « Tout cocher », et elle ne revient plus à chaque analyse. Ça marche dans « À ajouter », « Noms différents » et « Pas sur V3X » ; « Les réafficher » la retrouve. La liste des releases ignorées reste sur l'appareil.
+- **Rien ne part sans ton clic.** Pas d'upload automatique, pas d'envoi en tâche de fond. Le Garde-manger ne fait que *chercher* sur le tracker, en douceur (débit réglable).
+- **Tes fichiers ne sont jamais modifiés, renommés ni supprimés.** Baratie lit tes fichiers ; il n'écrit que dans son dossier de configuration et, si tu l'actives, crée des liens physiques dans le dossier de seed.
+- **Tes clés restent chez toi.** Token du tracker, clés TMDB et imgbb, mots de passe des clients : rangés dans le dossier de configuration, jamais renvoyés à la page, jamais envoyés ailleurs qu'au service concerné.
+- Pas de télémétrie, pas de mise à jour automatique.
 
-D3X retrouve les fichiers d'une release sur ce PC, sur ta seedbox, ou sur un NAS si tu lui indiques où il voit les dossiers du client (Réglages ▸ Clients torrent ▸ Dossiers du client).
+---
 
-## Plusieurs clients
+## Visite guidée
 
-Tes films sur une seedbox dans Deluge, tes livres sur ce PC dans qBittorrent ? Règle les deux dans Réglages ▸ Clients torrent (huit au plus), chacun avec son nom (« Seedbox », « PC »), son adresse, et ses propres dossiers du client.
+### 1. Choisir la release
 
-- **Analyse** : D3X interroge tous les clients en même temps et fusionne ce qu'ils seedent. Chaque ligne porte le nom de son client.
-- **Chaque cross-seed part dans le client qui a déjà les fichiers**, avec le chemin que ce client connaît. Si deux clients ont les mêmes fichiers, une seule ligne, ajoutée au premier de la liste (« Monter » change l'ordre). Une release déjà présente dans l'un des clients n'est jamais proposée.
-- **Un client injoignable ne bloque pas les autres** : un bandeau le signale (« Seedbox injoignable : … ») et l'analyse continue sans lui. Il est retenté au début de chaque analyse.
-- **Mon seed et la surveillance** regardent tous les clients : une release en seed dans l'un d'eux est en seed. Si un client ne répond pas, ce qu'il seede n'est pas compté comme absent, et aucune alerte de hit and run n'en découle.
-- **Publier** : la release part en seed dans le client dont les dossiers couvrent celui de la release, sinon celui qui seede déjà dans ce dossier, sinon celui qui tourne sur la machine des fichiers, sinon le premier. Tu peux en choisir un autre jusqu'à l'envoi.
-- **Médiathèque** : tu choisis le client qui reçoit ses ajouts (le premier par défaut).
-- **Liens** : un dossier de liens par client, tel que ce client le voit.
+Baratie parcourt tes dossiers et fabrique le .torrent pendant que tu vérifies la fiche.
 
-Avec un seul client, rien ne change : mêmes écrans, aucune étiquette.
+![Choisir la release](docs/captures/01-publier.png)
 
-## Mon seed
+### 2. Vérifier la fiche
 
-- **Hit and run** : chaque release à seeder encore, le temps fait et l'échéance, comparés à l'état réel dans ton client (en seed, arrêtée, absente). Une release absente de ce D3X mais que V3X voit en seed chez toi (une autre machine, un autre D3X) est marquée « En seed ailleurs », pas « Absente du client ». Celles qui n'auront plus le temps d'y arriver passent en rouge, en tête.
-- **Relais** : ceux que tu as déjà, ou que tu peux ajouter en cross-seed.
-- **Releases V3X arrêtées** : complètes dans ton client mais arrêtées, elles ne seedent pas. Un bouton les redémarre (seulement les complètes : D3X ne lance jamais un téléchargement).
+Le film est reconnu sur TMDB, les versions déjà présentes sur le tracker sont listées, et chaque champ est expliqué (« Pourquoi ces choix »).
 
-## Surveillance
+<p align="center"><img src="docs/captures/03-fiche.png" width="760" alt="La fiche"></p>
 
-Dans Réglages ▸ Surveillance, D3X relance l'analyse à intervalle régulier (de 15 minutes à 3 heures). Seuls les torrents arrivés depuis la dernière fois sont relus : ton client n'est presque pas sollicité.
+### 3. Captures d'écran
 
-- **Notification** sur ton bureau pour les nouvelles releases à cross-seeder et pour un hit and run en vue.
-- **Ajout automatique**, si tu le coches : seulement les nouvelles releases identiques (mêmes fichiers, mêmes noms), jamais les « noms différents », avec la règle habituelle (à l'arrêt, vérifiées, démarrées à 100 %). Le premier passage ne fait que noter l'existant : ce qui était déjà là s'ajoute à la main.
-- Fenêtre fermée, D3X reste dans la zone de notification. Sous Windows, il peut aussi se lancer avec la session, sans ouvrir sa fenêtre.
-- Sous Windows, la fenêtre de D3X s'épingle dans la barre des tâches avec l'icône de D3X, et l'épingle relance D3X. Une épingle faite avant la 1.1.21 garde l'icône d'Edge : retire-la et épingle de nouveau.
+Prises sur ta machine, hébergées seulement sur un clic.
 
-## La médiathèque
+![Captures d'écran](docs/captures/04-captures.png)
 
-Une médiathèque renomme les fichiers et ne garde pas le .torrent : D3X les retrouve quand même.
+### 4. Confirmer et publier
 
-1. Indique tes dossiers de films et de séries, sur ce PC ou sur ta seedbox.
-2. D3X liste les fichiers et envoie à V3X **leurs tailles seules** (les gros fichiers). V3X répond par les releases qui ont un fichier de cette taille.
-3. Pour chaque candidate, D3X lit son .torrent et cherche **chacun de ses fichiers** dans ta médiathèque, puis lit quelques morceaux de chaque fichier sur ton disque et compare leur empreinte à celle du .torrent. Une taille identique ne suffit jamais.
-4. Tu coches ce que tu veux seeder. L'ajout se fait par [liens](#les-liens) si tu les as activés (ta médiathèque n'est jamais touchée), sinon en renommant dans ton client, comme pour les « noms différents ».
-5. Une release à qui il ne manque que des petits fichiers annexes (.nfo, image, texte, sous-titre) est **À compléter** (onglet Incomplètes) : avec le dossier de liens et des liens physiques, ton client vérifie ce qui est là, télécharge les morceaux qui contiennent ces fichiers (quelques Mio au plus), puis seede.
+Un dernier récapitulatif de ce qui va partir : titre, fiche, taille, NFO, dossier de seed.
 
-Une release dont il manque un fichier (souvent un petit .nfo) est signalée « incomplète » : ton client ne pourrait pas la vérifier à 100 %, elle n'est pas proposée.
+![Confirmation](docs/captures/05-confirmation.png)
 
-![La médiathèque : deux films renommés retrouvés sur V3X, vérifiés morceau par morceau sur le disque, prêts à être ajoutés](docs/images/mediatheque.png)
+### 5. En seed
 
-## Les liens
+Le .torrent du tracker est ajouté à ton client, vérifié à 100 %, puis mis en seed.
 
-Certains clients ne savent pas renommer les fichiers d'un torrent (rTorrent), et D3X refuse de renommer quand un nom pourrait déjà exister. Dans Réglages ▸ Liens, choisis un **dossier de liens**, tel que ton client le voit (un par client si tu en as plusieurs) : D3X y range la release V3X, chacun de ses fichiers étant un lien physique vers le fichier de ta copie.
+![Publiée](docs/captures/06-publiee.png)
 
-- Aucune place en plus : un lien physique est le même fichier sous un autre nom.
-- Ta copie n'est pas touchée, et rien n'est jamais écrasé : un lien ne se crée que là où il n'y a rien. Si l'ajout échoue, les liens sont retirés, et D3X n'efface un lien que s'il pointe bien vers ta copie.
-- Le dossier doit exister, sur le même disque que tes fichiers, et D3X doit le voir : sur ce PC, par un partage avec les dossiers du client, ou sur ta seedbox par son agent. Sans dossier des liens, D3X n'en fait aucun pour ce client et repasse par le renommage : les Réglages le signalent.
-- **Liens symboliques** (case à cocher au même endroit, qui active aussi les liens) : pour une copie qu'on ne peut pas lier physiquement, comme un partage NFS ou SMB en lecture seule ou un autre disque. Chaque lien vise le fichier tel que ton client le voit, et le dossier des liens peut être n'importe où, tant que ton client peut y écrire. Ne déplace pas ta copie ensuite : le lien pointerait dans le vide. Sous Windows, il faut le mode développeur.
+### Garde-manger
 
-## Publier, en mieux
+Ta médiathèque comparée au tracker : **Absents** (le tracker n'a pas ce film), **Nouvelles combinaisons** (il l'a, mais pas dans cette source, résolution ou langue), **Doublons possibles** à vérifier, **Doublons**, **Identiques** (ta release exacte y est déjà) et **Exclus** (refusés par les règles). « Préparer la fiche » l'ouvre directement dans Publier.
 
-- **Doublon repéré avant de hacher** : l'empreinte des noms et tailles suffit pour savoir si la release existe déjà sur V3X, sans passer dix minutes à hacher 50 Gio pour rien. Si elle y est à l'identique, « Seeder la release V3X avec ces fichiers » l'ajoute à ton client à l'arrêt, la fait vérifier et la démarre à 100 %, sans rien publier.
-- **Déjà sur V3X** : les versions du même film, du même épisode ou du même livre déjà en ligne, avec leur taille ; celle qui a presque la même taille que la tienne est signalée, et un REPACK (ou PROPER) de ta release passe en tête. Dans le Lot, la version d'origine d'une release dont le REPACK est en ligne attend dans « À vérifier ». Rien n'est bloqué dans Publier : c'est toi qui décides.
-- **Hachage sur tous les cœurs**, mémoire bornée, et un cache : une release déjà hachée ne l'est plus jamais.
-- **MediaInfo sans rien installer** : la même bibliothèque que la page d'upload du site, calculée dans la page de D3X.
-- **La fiche est celle du site** : nom suggéré, catégorie, TMDB, NFO et présentation viennent du même générateur que la page d'upload de V3X. Éditeur avec barre d'outils et aperçu en direct.
-- **Ton propre .nfo** : avec l'option « Reprendre le .nfo de la release » (sous le NFO, gardée sur l'appareil), le .nfo du dossier de la release (NFO de team, source…) remplace celui de V3X, avec le MediaInfo ajouté à la suite s'il n'en contient pas. Elle vaut aussi pour le Lot.
-- **Une série choisie une fois** : la série TMDB que tu choisis à la main pour une saison est reprise pour les autres saisons de la même série, dans Publier comme dans le Lot.
-- **Présentation en HTML** pour les membres que V3X y autorise (même règle que le site) : choix BBCode ou HTML au-dessus de l'éditeur, retenu sur l'appareil, et aperçu tel que le site l'affichera.
-- **Rapport VirusTotal** demandé pour les catégories où V3X l'exige (applications, jeux), compté dans « Il manque » tant qu'il n'est pas rempli.
-- **Image du PC** : un bouton de la barre d'outils envoie une image de ton ordinateur (pochette, capture), hébergée sur V3X avec ta clé, et l'insère dans la présentation.
-- **Charger un fichier** : remplace la présentation par celle d'un fichier, un .txt en BBCode, ou un .html si V3X t'autorise la présentation en HTML.
-- **Pochette Discogs** : pour un album sans pochette sur MusicBrainz, avec ton jeton Discogs (Réglages ; il se crée sur discogs.com ▸ Paramètres ▸ Développeurs). Tu choisis l'édition, D3X récupère sa pochette en grand, l'héberge sur V3X et la place en tête de la présentation.
-- **Seed automatique**, même quand ton client tourne sur un NAS ou dans Docker : D3X devine où le client voit tes fichiers, d'après les torrents qu'il seede déjà.
-- Fichiers cachés et aperçus de médiathèque écartés (`.DS_Store`, `*.trickplay`, `extrafanart`…), liens symboliques suivis sans boucle, fichier encore en cours d'écriture détecté.
+![Garde-manger](docs/captures/07-garde-manger.png)
 
-![La fiche d'un film dans Publier : l'éditeur de présentation et l'aperçu tel que le site l'affichera](docs/images/publier-apercu.png)
+### Historique, réglages et thème sombre
 
-## La musique
+<p align="center">
+  <img src="docs/captures/08-historique.png" width="49%" alt="Historique">
+  <img src="docs/captures/10-sombre.png" width="49%" alt="Thème sombre">
+</p>
 
-Un dossier d'album (une ou plusieurs pistes, plusieurs disques compris) est reconnu tout seul.
+<p align="center"><img src="docs/captures/09-reglages.png" width="420" alt="Réglages"></p>
 
-![Un album dans Publier : l'édition MusicBrainz retrouvée d'après les durées des pistes, Audio ▸ Musique, et la qualité proposée pour le nom](docs/images/musique.png)
+---
 
-- **Tags et qualité lus sur place**, sur ce PC ou sur la seedbox : FLAC, MP3, M4A (AAC, ALAC), Ogg Vorbis, Opus, WAV et DSF. Seuls les en-têtes sont lus.
-- **L'album retrouvé dans MusicBrainz** : chaque édition est comparée aux pistes, leur nombre puis leurs durées à deux secondes près. L'édition désignée par les tags (Picard, beets…) est reprise telle quelle. Entre un CD et une édition numérique aux mêmes pistes, le support noté dans les tags l'emporte.
-- **La fiche album du site** (jaquette, tracklist, label), dans Audio ▸ Musique.
-- **Le nom** : V3X exige la qualité dans le nom d'un album (`FLAC 24bit-96kHz`, `MP3 320`). D3X la lit dans les fichiers et propose de l'ajouter d'un clic.
+## Installation
 
-Le lot ne publie seul un album que si l'édition est certaine (tags, ou mêmes pistes aux mêmes durées, d'une seule œuvre) et que toutes les pistes ont la même qualité. Un nom sans la qualité part « à vérifier » avec le nom corrigé, ou est complété si l'option du lot est cochée.
+### Ce qu'il te faut
 
-## Depuis une seedbox (SSH)
+| | |
+| --- | --- |
+| **Un compte sur un tracker UNIT3D** | avec le droit d'upload et un **token API** (sur le site : ton profil ▸ Paramètres ▸ API) |
+| **Une clé API TMDB** | gratuite sur [themoviedb.org](https://www.themoviedb.org/settings/api) |
+| **Un client torrent** | qBittorrent 4.5+, Transmission, Deluge ou rTorrent, avec son interface web activée |
+| **Une clé API imgbb** *(facultatif)* | pour héberger les captures : gratuite sur [api.imgbb.com](https://api.imgbb.com/) |
+| **ffmpeg / ffprobe** | déjà dans l'image Docker ; à installer toi-même pour le binaire seul |
 
-Tes releases sont sur une seedbox ? Pas besoin de les rapatrier : dans Réglages ▸ Seedbox (SSH), indique l'adresse, ton utilisateur et ton mot de passe (ou ta clé SSH). Publier et Lot proposent alors « Ce PC » ou ta seedbox. Plusieurs seedboxes ? Chacune reste enregistrée (sans mot de passe) : choisis-la dans « Seedboxes enregistrées », puis « Se connecter ».
+### Docker (recommandé)
 
-- D3X y dépose son **agent** (un petit programme Linux de 1,4 Mio, compilé avec chaque version, dans `~/.d3x`) qui liste, hache et lit les fichiers **sur place**. Seuls la liste des fichiers, le .torrent et les morceaux lus par MediaInfo reviennent sur ton PC, par la connexion SSH chiffrée.
-- L'agent est vérifié par son empreinte SHA-256 avant chaque usage ; il est remplacé à la version suivante de D3X.
-- **Clé d'hôte vérifiée** : à la première connexion, D3X te montre l'empreinte de la seedbox et attend ton accord. Si elle change ensuite, tout est bloqué jusqu'à ce que tu acceptes la nouvelle.
-- **Le mot de passe n'est jamais enregistré** : il reste en mémoire le temps de la session. Avec une clé SSH sans phrase de passe, la seedbox se reconnecte seule au lancement.
-- Aucun nom de fichier ne passe par le shell de la seedbox : chaque demande à l'agent part en un seul argument encodé.
-- Le client torrent de la seedbox doit être dans tes clients (Réglages ▸ Clients torrent) : la release publiée part en seed sur les mêmes fichiers.
+Une image prête à l'emploi (amd64 et arm64) est publiée avec chaque version :
 
-Seedbox sous Linux x86_64 ou arm64.
+```bash
+docker pull ghcr.io/santoryu-d/baratie:latest
+```
 
-## Le lot
-
-Chaque sous-dossier ou fichier d'un dossier est une release. D3X la publie seule **seulement** si l'œuvre TMDB est trouvée avec certitude (même titre, même année à un an près, bon type), que la catégorie est connue, que le MediaInfo est lu et que V3X n'annonce aucun refus. Jamais pour un exécutable, une collection sans fichier à sa racine ou une release au-delà du plafond de taille. Le reste part « à vérifier », avec la raison, et s'ouvre dans Publier d'un clic.
-
-Simulation par défaut, plafond de publications (en nombre, ou en Gio publiés pour suivre le rythme de ton envoi), pause entre deux publications, arrêt propre. **Le lot tourne dans D3X, pas dans la page.** Sur un NAS ou un serveur (Docker), ferme la page : le lot continue, et la page rouverte montre où il en est. Sur ce PC, le MediaInfo est calculé par la page (comme pour Publier) ; avec [MediaInfo](https://mediaarea.net/fr/MediaInfo) installé (`mediainfo` dans le PATH, ou `D3X_MEDIAINFO` pointant vers lui), D3X le calcule seul. Sans lui, fermer la fenêtre met le lot en pause à la release suivante, puis D3X s'arrête comme d'habitude. Pendant un lot, D3X empêche Windows de mettre l'ordinateur en veille de lui-même (l'écran peut s'éteindre), et il ne s'arrête pas si le navigateur endort sa fenêtre (écran éteint) : le lot reprend quand elle se réveille. Disque lent ? L'option « Attendre la vérification du client » fait vérifier chaque release publiée par ton client avant de passer à la suivante, au lieu d'empiler les vérifications, et « Démarrer le seed à la fin du lot » garde les releases publiées à l'arrêt pendant que le lot hache les suivantes, puis les démarre toutes à la fin. Les décisions sont gardées : un lot interrompu ne repart pas seul (même après un redémarrage du conteneur), relance-le et il reprend où il en était, ce qui est publié n'est plus proposé. Pour recommencer avec d'autres options, « Tout remettre en attente » vide l'onglet ouvert (À vérifier, Simulé, Ignoré, Erreur, Déjà présent) sans rien publier ni effacer.
-
-Une release « à vérifier » s'ouvre dans Publier avec **Revoir** : corrige la fiche, puis publie-la tout de suite, ou **Garder pour le lot**. Elle passe alors dans l'onglet **Prête**, et le prochain lot la publie avec ta fiche, telle quelle, sans rien redécider.
-
-![Un lot en simulation : les releases mises de côté, chacune avec sa raison](docs/images/lot.png)
-
-## Aux couleurs de V3X
-
-Le logo, la barre latérale et les polices du site, pour ne pas être perdu. D3X reprend le fond et la couleur d'accent choisis sur ton profil V3X ; tu peux aussi les changer dans Réglages ▸ Apparence (trois fonds, huit accents).
-
-![D3X dans trois fonds et trois accents : sombre, jour, bleu nuit](docs/images/themes.png)
-
-## Installer
-
-1. Télécharge le fichier de ton système dans les [versions publiées](https://github.com/V3x0rV3x/D3X/releases/latest) :
-   - Windows : `d3x_windows_amd64.exe`
-   - macOS : `d3x_darwin_arm64` (puces Apple) ou `d3x_darwin_amd64` (Intel)
-   - Linux : `d3x_linux_amd64` ou `d3x_linux_arm64`
-2. Lance-le. D3X s'ouvre dans sa propre fenêtre ; sous Windows, son icône apparaît aussi près de l'horloge (clic pour rouvrir la fenêtre, clic droit ▸ Quitter). Tout reste sur ta machine (`http://127.0.0.1`). Fermer la fenêtre arrête D3X, sauf s'il a un travail en cours (il le termine d'abord) ou si la surveillance est active (il reste dans la zone de notification).
-
-Les mises à jour s'installent d'un clic depuis D3X, et seulement après deux vérifications : la liste des empreintes doit être signée par la clé de V3X, et le fichier doit avoir l'empreinte annoncée. D3X cherche une nouvelle version toutes les heures ; le bouton **Vérifier**, sous le numéro de version en bas à gauche, cherche tout de suite.
-
-Premier lancement :
-
-- **Windows** affiche parfois « Windows a protégé votre ordinateur » pour un programme qu'il ne connaît pas encore : *Informations complémentaires*, puis *Exécuter quand même*.
-- **macOS** : `xattr -d com.apple.quarantine d3x_darwin_*` puis `chmod +x d3x_darwin_*`, ou clic droit ▸ Ouvrir.
-- **Linux** : `chmod +x d3x_linux_*`.
-
-### Sur un NAS ou un serveur (Docker)
-
-L'image `ghcr.io/v3x0rv3x/d3x` (amd64 et arm64) contient le même binaire que la version publiée, en mode serveur : pas de fenêtre, la page s'ouvre depuis n'importe quel appareil du réseau.
+Exemple de `docker-compose.yml` (aussi fourni à la racine du dépôt, avec `build: .` pour construire l'image toi-même) :
 
 ```yaml
 services:
-  d3x:
-    image: ghcr.io/v3x0rv3x/d3x:latest
-    container_name: d3x
+  baratie:
+    image: ghcr.io/santoryu-d/baratie:latest
+    container_name: baratie
     restart: unless-stopped
+    user: "1000:1000"            # UID:GID du propriétaire de tes fichiers (commande « id »)
     ports:
-      - "8733:8733"
+      - "8769:8769"
+    environment:
+      - BARATIE_SEED_DIR=/data/torrents/baratie   # facultatif, voir « Seed par liens physiques »
+      - BARATIE_MEDIA=/data
+      - TZ=Europe/Paris
     volumes:
-      - d3x:/config
-      - /chemin/vers/tes/medias:/data:ro
-volumes:
-  d3x:
+      - ./config:/config
+      - /chemin/vers/tes/medias:/data              # même chemin que dans ton client torrent
 ```
 
-1. `docker compose up -d`, puis `docker compose logs d3x` : le journal donne le lien d'accès, `http://ADRESSE-DE-CETTE-MACHINE:8733/auth?t=…`. **Ouvre D3X par ce lien** : l'adresse seule (`IP:8733`) ne suffit pas, la page le rappelle. Le jeton est gardé dans `/config` (ou choisi avec `D3X_TOKEN`) ; le navigateur s'en souvient 400 jours.
-2. Dans Réglages, l'adresse du client torrent est celle de son conteneur (`http://qbittorrent:8080`) ou de la machine, jamais `127.0.0.1`. Si le client est dans le même fichier compose, ajoute `depends_on: [qbittorrent]` au service `d3x` pour qu'il démarre après lui.
-3. Tes médias sont montés en lecture seule : D3X n'écrit jamais dedans. S'il n'a pas le droit de les lire, lance-le avec l'utilisateur qui les possède (`user: "1000:1000"`, voir `id -u` et `id -g`). Même chose si tu montes un dossier de ta machine sur `/config` ou pour le dossier de liens de la Médiathèque : D3X doit pouvoir y écrire, sinon il affiche « permission denied » avec la ligne `user:` à ajouter.
-4. Mise à jour : `docker compose pull && docker compose up -d`. D3X signale les nouvelles versions mais ne se remplace pas lui-même dans un conteneur.
-5. **Le lot continue page fermée** : l'image contient `mediainfo`, D3X calcule le MediaInfo lui-même sur `/data`. Pour une release sur ta seedbox (SSH), c'est encore la page qui le calcule : le lot attend qu'une page soit ouverte, puis repart. `docker stop` n'attend que quelques secondes : pour laisser finir une grosse publication en cours, ajoute `stop_grace_period: 1m` au service `d3x`.
+```bash
+docker compose up -d
+docker logs baratie        # affiche le lien d'accès, avec son jeton
+```
 
-Le jeton protège la page : ne publie pas le lien, et derrière un proxy https, le cookie passe en `Secure`. Le binaire seul fait pareil avec `d3x -listen 0.0.0.0:8733`.
+> **Monte tes médias au même chemin que dans ton client torrent** (ici `/data` des deux côtés). Sinon, indique la correspondance dans Réglages ▸ Dossiers du client (« `/data` chez Baratie = `/downloads` chez qBittorrent »).
 
-### Vérifier un téléchargement
+### Unraid
 
-Chaque version publie `checksums.txt` (l'empreinte SHA-256 de chaque fichier) et `checksums.txt.sig`, la signature de cette liste par la clé de V3X. La clé publique est dans ce dépôt : [`d3x-signature.pub`](d3x-signature.pub).
+1. Installe le plugin **Docker Compose Manager** (Apps).
+2. Docker ▸ *Add New Stack*, nomme-la `baratie`, colle l'exemple ci-dessus.
+3. Remplace `user: "1000:1000"` par `user: "99:100"` (nobody:users) et `/chemin/vers/tes/medias` par ton partage (par exemple `/mnt/user/data`), monté au **même chemin** que dans ton conteneur qBittorrent.
+4. *Compose Up*, puis ouvre les logs du conteneur pour récupérer le lien.
 
-1. Vérifie que la liste vient bien de V3X (OpenSSL 3, fourni avec Git sous Windows) :
-   ```sh
-   openssl pkeyutl -verify -pubin -inkey d3x-signature.pub -rawin -in checksums.txt -sigfile checksums.txt.sig
-   ```
-   La réponse doit être `Signature Verified Successfully`.
-2. Compare l'empreinte de ton fichier avec la sienne dans la liste : `sha256sum d3x_linux_amd64`, ou `certutil -hashfile d3x_windows_amd64.exe SHA256` sous Windows.
+### Binaire seul (Linux, macOS, Windows)
 
-## Régler
+Compile-le ([voir plus bas](#compiler-soi-même)) puis lance :
 
-1. **Ta clé API V3X** : [Réglages ▸ Intégrations](https://v3x.club/settings?tab=integrations) sur le site, avec le droit « Torznab » (cross-seed) et le droit « Upload » (publier).
-2. **Ton client torrent**, par son interface web, ou plusieurs (« Ajouter un autre client »). Le bouton *Détecter sur ce PC* trouve ceux qui tournent ici. « Tester la connexion » essaie un client sans rien enregistrer ; s'il ne répond pas, D3X dit quoi vérifier (adresse, port, pare-feu, adresse vue depuis Docker).
-3. **Ta seedbox** (facultatif), par SSH, pour publier ce qui s'y trouve.
-4. **Les dossiers du client** (facultatif), pour chaque client : s'il tourne ailleurs (NAS, Docker), une ligne par dossier, son chemin ici et le même vu par le client.
-5. **Catégorie et étiquette** (facultatif), posées sur chaque torrent ajouté par D3X pour les retrouver dans ton client, et une **catégorie de tes publications** pour ranger à part ce que tu publies avec Publier et le Lot (vide : la même). Dans la catégorie, `{cat}` reprend celle de ta copie d'origine dans qBittorrent : `{cat}.cross` range un cross-seed de « tv » dans « tv.cross » (sans catégorie d'origine : « cross »).
+```bash
+./baratie                          # écoute sur 127.0.0.1:8769 (cette machine seulement)
+./baratie -listen 0.0.0.0:8769     # accessible depuis ton réseau local
+```
 
-| Client | Adresse habituelle | À activer |
-| --- | --- | --- |
-| qBittorrent (4.5+) | `http://127.0.0.1:8080` | Outils ▸ Options ▸ Interface Web, puis un nom d'utilisateur et un mot de passe dans « Authentification » (à créer : aucun d'office depuis la 4.6) |
-| Transmission | `http://127.0.0.1:9091` | Préférences ▸ Distant |
-| Deluge | `http://127.0.0.1:8112` | greffon WebUI (mot de passe seul) |
-| rTorrent | `https://ta-seedbox/RPC2` | XML-RPC, avec l'identification de la seedbox |
+Le lien d'accès s'affiche dans le terminal. La configuration est rangée dans le dossier de configuration de l'utilisateur (`~/.config/Baratie`, `%AppData%\Baratie`…) ou dans `BARATIE_CONFIG`.
 
-Seedbox qui demande d'abord une identification du serveur (une fenêtre « identifiez-vous » avant même qBittorrent) : D3X y présente le pseudo et le mot de passe des champs du client. Inutile de les écrire dans l'adresse.
+---
 
-Les réglages restent sur ta machine, lisibles par toi seul :
+## Premier lancement
 
-| Système | Dossier |
+1. Ouvre le lien affiché dans les logs : `http://ADRESSE:8769/auth?t=…`. Le jeton reste le même d'un lancement à l'autre ; garde ce lien en favori.
+2. Dans **Réglages** :
+   - l'**adresse de ton tracker** et ton **token API** ;
+   - ta **clé TMDB** (et imgbb si tu veux héberger les captures) ;
+   - ton **client torrent** (« Tester la connexion » doit passer au vert) ;
+   - catégorie et étiquette posées sur les torrents ajoutés (par défaut : étiquette `Baratie`).
+3. Copie [`regles.exemple.json`](regles.exemple.json) en `regles.json` dans le dossier de configuration (`./config/` avec l'exemple Docker) et adapte-le à ton tracker. Les Réglages t'indiquent si le fichier a bien été lu.
+4. Va dans **Publier**, choisis une release, et laisse-toi guider. Tant que tu n'as pas confiance, le bouton **Simuler** montre exactement ce qui partirait, sans rien envoyer.
+
+---
+
+## Le fichier de règles de ton tracker
+
+Chaque tracker UNIT3D a ses propres identifiants (catégories, types, résolutions) et son propre règlement. Baratie les lit dans `regles.json`, à placer dans le dossier de configuration (ou ailleurs avec `BARATIE_RULES=/chemin/regles.json`).
+
+**Sans fichier**, Baratie utilise les identifiants d'une installation UNIT3D neuve et n'applique aucune règle d'upload : il publie quand même, mais ne t'avertit de rien.
+
+Pars de [`regles.exemple.json`](regles.exemple.json) : il est commenté (les clés qui commencent par `_` sont ignorées) et **ses valeurs sont des exemples** à remplacer par celles de ton tracker.
+
+| Clé | Rôle |
 | --- | --- |
-| Windows | `%AppData%\D3X` |
-| macOS | `~/Library/Application Support/D3X` |
-| Linux | `~/.config/D3X` |
+| `name` | Nom du tracker affiché dans la page (par défaut : son nom de domaine). |
+| `categories` | `films` (obligatoire) et `films_vostfr` (facultative : catégorie à part pour les VO sous-titrées). |
+| `types` | `fulldisc`, `remux`, `encode`, `webdl`, `webrip`, `hdtv`, `dvdr`, `3d`. Une seule clé `web` si ton tracker ne sépare pas WEB-DL et WEBRip. Un type absent est refusé. |
+| `resolutions` | `"2160p": 2`, `"1080p": 3`… |
+| `banned_teams` | Teams interdites : `"TAG": "raison affichée"`. |
+| `raw_only_teams` | Teams acceptées seulement en brut (Remux, Full Disc). |
+| `banned_tokens` | Mentions du nom refusées : `"HDLIGHT": "encodes allégés refusés"`. |
+| `quality` | Règles d'encodage (retire le bloc pour n'en appliquer aucune). |
 
-## Questions
+Le bloc `quality` :
 
-**Un cross-seed compte-t-il comme un téléchargement ?** La release apparaît dans tes téléchargements sur V3X, mais comme tu n'as reçu aucun octet, le hit and run ne s'applique pas aux cross-seeds.
+| Clé | Rôle |
+| --- | --- |
+| `vo_needs_french_subs` | Une VO doit avoir des sous-titres français. |
+| `multi_needs_original` | Un MULTi doit contenir la langue originale du film (d'après TMDB). |
+| `min_kbps` | Débit vidéo minimum d'un encode, par `source/codec/résolution` : `"bluray/x264/1080p": 8000`, `"web/x265/1080p": 3500` (`web` = WEBRip). |
+| `min_kbps_animation` | Idem pour les films d'animation. |
+| `sd_min_kbps`, `sd_max_ac3_kbps` | Rips SD : débit vidéo minimum et débit AC3 maximum. |
+| `hd_min_audio_kbps` | Débit audio conseillé pour un encode HD (avertissement). |
 
-**V3X refuse le .torrent ?** Si ton ratio est sous le plancher ou si tu as trop de hit and run non régularisés, le site bloque les nouveaux .torrent, cross-seed compris. D3X affiche la raison. Tes propres publications ne sont jamais bloquées.
+**Où trouver les identifiants ?** Sur la page d'upload de ton tracker : les listes *Catégorie*, *Type* et *Résolution* portent chacune une valeur numérique (clic droit ▸ *Inspecter* sur la liste). En cas de doute, demande au staff : ils connaissent leur règlement mieux que personne.
 
-**Et l'onglet « Noms différents » ?** Ce sont les mêmes fichiers que sur V3X sous d'autres noms (dossier renommé, épisodes renommés par ta médiathèque…). D3X ajoute la release V3X à l'arrêt, donne à ses fichiers les noms de ta copie *dans le client* (chaque fichier V3X associé à un fichier de même taille), puis lance la vérification : elle ne démarre qu'à 100 %, sinon elle reste arrêtée. Rien n'est créé, déplacé ni renommé sur ton disque. Par prudence, D3X refuse quand un nom de la release V3X existe déjà, car le client déplacerait ce fichier : autre fichier de ta copie, autre torrent du client, ou fichier présent sur le disque. Le disque est vérifié par D3X quand il le voit (même machine, ou dossier partagé avec une correspondance de chemins), sinon demandé au client (qBittorrent 5, Deluge) ; quand personne ne peut le vérifier, D3X refuse au lieu de deviner. Possible avec qBittorrent, Deluge et Transmission (même rangement des dossiers, disque vu par D3X) ; rTorrent ne sait pas renommer les fichiers d'un torrent.
+> Les règles de Baratie t'aident, elles ne remplacent pas le règlement de ton tracker : relis toujours ta fiche avant de publier.
 
-**Mon client tourne sur un NAS.** Publier lit les fichiers depuis ce PC (partage réseau) et ton client les seede là où il les voit : D3X traduit le chemin, en le devinant d'après les torrents que le client seede déjà dans ce dossier. Tu peux le corriger, il s'en souviendra (dans les dossiers de ce client).
+---
 
-**Une seedbox et des fichiers sur ce PC ?** Règle les deux clients : D3X les analyse ensemble, et chaque cross-seed part dans le client qui a les fichiers. Voir [Plusieurs clients](#plusieurs-clients). Les réglages restent lisibles par D3X 1.0 : il n'y retrouverait que le premier client.
+## Seed par liens physiques
+
+Les trackers aiment des noms de release propres ; ta médiathèque (Radarr, Plex, Jellyfin…) aime les siens. Avec `BARATIE_SEED_DIR`, les deux cohabitent :
+
+- à la publication, la release est recréée dans ce dossier en **liens physiques** (hardlinks), au **nom exact de la fiche** ;
+- le client torrent seede depuis ces liens ;
+- tes fichiers d'origine gardent leur nom et leur place, et l'espace disque n'est pas doublé.
+
+Conditions : le dossier de seed doit être sur le **même disque / volume** que tes films (un lien physique ne traverse pas les volumes), et Baratie doit pouvoir y écrire. Sous Docker, monte un dossier parent commun (par exemple `/data` qui contient à la fois `films/` et `torrents/`).
+
+Sans `BARATIE_SEED_DIR`, le client seede directement depuis le dossier de la release, tel quel.
+
+---
+
+## Variables d'environnement
+
+| Variable | Défaut | Rôle |
+| --- | --- | --- |
+| `BARATIE_LISTEN` | `127.0.0.1:8769` (`0.0.0.0:8769` dans l'image) | Adresse d'écoute. |
+| `BARATIE_CONFIG` | dossier de config utilisateur (`/config` dans l'image) | Réglages, jeton, règles, historique, cache. |
+| `BARATIE_TOKEN` | généré au premier lancement | Jeton d'accès imposé (24 caractères au moins). |
+| `BARATIE_RULES` | `<config>/regles.json` | Chemin du fichier de règles. |
+| `BARATIE_SEED_DIR` | *(aucun)* | Dossier de seed en liens physiques. |
+| `BARATIE_MEDIA` | parent des bibliothèques, sinon `/data` | Dossier proposé pour choisir les bibliothèques du Garde-manger. |
+| `BARATIE_FFMPEG` | `ffmpeg` du PATH | Chemin de ffmpeg (ffprobe est cherché à côté). |
+| `BARATIE_DOCKER` | `1` dans l'image | Adapte les messages d'aide (droits des volumes, chemins). |
+
+---
+
+## Sécurité
+
+- **Ne l'expose pas sur Internet.** Baratie est fait pour ton réseau local. Pour y accéder de l'extérieur, passe par un VPN (WireGuard, Tailscale…), pas par une redirection de port.
+- L'accès se fait par un **jeton** (dans le lien `…/auth?t=`) qui ouvre une session dans ton navigateur. Traite ce lien comme un mot de passe.
+- Le dossier de configuration contient ton token de tracker et tes clés : ne le partage pas, ne le versionne pas.
+- Le conteneur tourne sous l'utilisateur que tu choisis (`user:`), sans privilège particulier.
+
+---
 
 ## Compiler soi-même
 
-Go 1.26 ou plus :
+Il faut [Go](https://go.dev/dl/) 1.26 ou plus récent. Aucune dépendance externe.
 
-```sh
+```bash
+git clone https://github.com/santoryu-d/baratie.git
+cd baratie
 go test ./...
-sh scripts/build-agents.sh   # agent de seedbox, facultatif
-go build -trimpath -o d3x .
+go build -trimpath -ldflags "-s -w -X main.version=1.0.0" -o baratie .
 ```
 
-Sans `scripts/build-agents.sh`, tout marche sauf la seedbox.
+Image Docker locale :
 
-Pour regarder l'interface sans compte ni client torrent, le mode démo lance la page avec un faux qBittorrent, un faux V3X et un faux MusicBrainz, peuplés de releases inventées, avec une médiathèque, des demandes et des relais (c'est lui qui a servi aux captures) :
-
-```sh
-D3X_DEMO=600 go test ./internal/server -run 'TestDemo$' -v
+```bash
+docker build -t baratie .
 ```
 
-puis ouvrir `http://127.0.0.1:8799/auth?t=demo`. Avec `D3X_DEMO_CLIENTS=1`, la démo a trois clients : une seedbox, ce PC et un NAS éteint.
+Démo complète (faux tracker, faux client, médiathèque d'exemple), pratique pour essayer l'interface ou contribuer :
 
-## Licence
+```bash
+BARATIE_DEMO=600 go test ./internal/server -run TestDemo -v
+# puis ouvre http://127.0.0.1:8799/auth?t=demo
+```
 
-[MIT](LICENSE). MediaInfo : [mediainfo.js](https://github.com/buzz/mediainfo.js) 0.3.7 (MediaInfoLib), licence BSD-2-Clause, voir [`internal/server/ui/vendor/mediainfo`](internal/server/ui/vendor/mediainfo).
+---
+
+## Crédits et licence
+
+Baratie est un fork de [**D3X**](https://github.com/V3x0rV3x/D3X), l'outil de publication de la communauté **V3X** (licence MIT). Toute la base vient de là : le hachage, la lecture des noms, le MediaInfo dans la page, les clients torrent, le suivi du seed et l'interface. Merci à V3X et aux contributeurs de D3X.
+
+Baratie en garde le cœur et le recentre sur UNIT3D : les parties propres à V3X (publication vers V3X, cross-seed, musique, agent seedbox, mises à jour) ont été retirées, et les règles du tracker passent dans un fichier à adapter. Si tu publies sur V3X, c'est D3X qu'il te faut.
+
+Composants inclus : [mediainfo.js](https://github.com/buzz/mediainfo.js) (BSD-2-Clause), polices Bricolage Grotesque, Hanken Grotesk et Spline Sans Mono (SIL Open Font License 1.1).
+
+Distribué sous licence **MIT** : voir [LICENSE](LICENSE).
+
+> Baratie n'est affilié à aucun tracker. Respecte le règlement du tien et les lois de ton pays.

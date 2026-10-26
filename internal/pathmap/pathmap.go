@@ -1,4 +1,4 @@
-// Package pathmap traduit un chemin vu par D3X en chemin vu par le client
+// Package pathmap traduit un chemin vu par Baratie en chemin vu par le client
 // torrent, quand les deux ne tournent pas au même endroit (qBittorrent sur un
 // NAS ou dans Docker : « \\NAS\data\films » ici, « /data/films » là-bas).
 package pathmap
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Rule : le dossier From (côté D3X) est le dossier To (côté client).
+// Rule : le dossier From (côté Baratie) est le dossier To (côté client).
 type Rule struct {
 	From string `json:"from"`
 	To   string `json:"to"`
@@ -44,11 +44,11 @@ func prefix(p, from, to string) (string, bool) {
 	return strings.TrimRight(to, `/\`) + rest, true
 }
 
-// ToClient traduit un chemin de D3X pour le client (règle au préfixe le plus
+// ToClient traduit un chemin de Baratie pour le client (règle au préfixe le plus
 // long ; sans règle, le chemin est rendu tel quel).
 func ToClient(p string, rules []Rule) string { return apply(p, rules, true) }
 
-// Covers dit si une règle traduit p (son dossier D3X est p ou le contient).
+// Covers dit si une règle traduit p (son dossier Baratie est p ou le contient).
 func Covers(p string, rules []Rule) bool {
 	for _, r := range rules {
 		if r.From == "" || r.To == "" {

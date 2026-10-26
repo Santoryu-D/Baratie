@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/V3x0rV3x/D3X/internal/bencode"
+	"baratie/internal/bencode"
 )
 
 type fixFile struct {
@@ -22,7 +22,7 @@ type fixture struct {
 	files []fixFile
 	size  int64 // mono-fichier si files == nil
 	// Valeurs calculées par le site (lib/torrent-parse.ts, Node) sur ces
-	// mêmes octets : D3X doit retomber exactement dessus.
+	// mêmes octets : Baratie doit retomber exactement dessus.
 	wantContent string
 	wantSize    string
 }
@@ -112,12 +112,12 @@ var fixtures = []fixture{
 	},
 }
 
-// D3X_FIXTURES=dossier : écrit les .torrent de test et ce que D3X en tire,
+// BARATIE_FIXTURES=dossier : écrit les .torrent de test et ce que Baratie en tire,
 // pour comparer au calcul du site.
 func TestDumpFixtures(t *testing.T) {
-	dir := os.Getenv("D3X_FIXTURES")
+	dir := os.Getenv("BARATIE_FIXTURES")
 	if dir == "" {
-		t.Skip("D3X_FIXTURES non défini")
+		t.Skip("BARATIE_FIXTURES non défini")
 	}
 	out := map[string][2]string{}
 	for _, f := range fixtures {

@@ -8,9 +8,9 @@ import (
 )
 
 func TestPermHint(t *testing.T) {
-	denied := &fs.PathError{Op: "open", Path: "/config/D3X/config.json.tmp", Err: fs.ErrPermission}
+	denied := &fs.PathError{Op: "open", Path: "/config/config.json.tmp", Err: fs.ErrPermission}
 
-	t.Setenv("D3X_MANAGED", "docker")
+	t.Setenv("BARATIE_DOCKER", "1")
 	got := withPermHint(denied)
 	if !errors.Is(got, fs.ErrPermission) {
 		t.Fatal("l'erreur d'origine doit rester reconnaissable")
@@ -21,7 +21,7 @@ func TestPermHint(t *testing.T) {
 		}
 	}
 
-	t.Setenv("D3X_MANAGED", "")
+	t.Setenv("BARATIE_DOCKER", "")
 	if got := withPermHint(denied).Error(); strings.Contains(got, "docker") || !strings.Contains(got, "vérifie ses droits") {
 		t.Errorf("hors Docker : %s", got)
 	}

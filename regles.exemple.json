@@ -1,0 +1,63 @@
+{
+  "_aide": "Copie ce fichier en regles.json dans le dossier de configuration de Baratie (/config dans Docker), puis remplace les valeurs par celles de TON tracker. Les clés qui commencent par _ sont ignorées. Les identifiants se lisent dans le formulaire d'upload du site (code source de la page) ou auprès du staff.",
+
+  "name": "MonTracker",
+
+  "_categories": "films est obligatoire ; films_vostfr est facultative (films en VO sous-titrée rangés à part). Retire la ligne si ton tracker n'en a pas.",
+  "categories": {
+    "films": 1,
+    "films_vostfr": 6
+  },
+
+  "_types": "fulldisc, remux, encode, webdl, webrip, hdtv, dvdr, 3d. Si ton tracker n'a qu'un type pour WEB-DL et WEBRip, remplace webdl et webrip par une seule clé web. Un type absent est refusé à la fiche.",
+  "types": {
+    "fulldisc": 1,
+    "remux": 2,
+    "encode": 3,
+    "webdl": 4,
+    "webrip": 5,
+    "hdtv": 6
+  },
+
+  "resolutions": {
+    "4320p": 1, "2160p": 2, "1080p": 3, "1080i": 4, "720p": 5,
+    "576p": 6, "576i": 7, "480p": 8, "480i": 9, "Other": 10
+  },
+
+  "_banned_teams": "Teams refusées par ton tracker : tag de la team → raison affichée. Exemple fictif.",
+  "banned_teams": {
+    "TEAMEXEMPLE": "team refusée par le règlement"
+  },
+
+  "_raw_only_teams": "Teams acceptées seulement en brut (Remux, Full Disc), jamais leurs encodes.",
+  "raw_only_teams": [],
+
+  "_banned_tokens": "Mentions du nom de release refusées : mot → raison.",
+  "banned_tokens": {
+    "CAM": "source CAM refusée",
+    "TELESYNC": "source Telesync refusée",
+    "TS": "source Telesync refusée",
+    "SCR": "screener refusé"
+  },
+
+  "_quality": "Règles d'encodage. Retire tout le bloc pour n'en appliquer aucune. Les débits ci-dessous sont des EXEMPLES : mets ceux de ton règlement.",
+  "quality": {
+    "vo_needs_french_subs": true,
+    "multi_needs_original": true,
+    "_min_kbps": "Débit vidéo minimum d'un encode : source/codec/résolution. source = bluray ou web (WEBRip) ; codec = x264 ou x265.",
+    "min_kbps": {
+      "bluray/x264/720p": 4000,
+      "bluray/x264/1080p": 8000,
+      "bluray/x265/1080p": 6000,
+      "bluray/x265/2160p": 12000,
+      "web/x264/1080p": 5000,
+      "web/x265/1080p": 3500
+    },
+    "min_kbps_animation": {
+      "bluray/x264/1080p": 5000
+    },
+    "sd_min_kbps": 750,
+    "sd_max_ac3_kbps": 448,
+    "hd_min_audio_kbps": 384
+  }
+}

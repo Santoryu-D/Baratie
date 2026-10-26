@@ -6,16 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/V3x0rV3x/D3X/internal/config"
+	"baratie/internal/config"
 )
 
 func testServer(t *testing.T, opts Options) *Server {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("AppData", tmp)
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-	t.Setenv("HOME", tmp)
-	return NewWith("dev", config.Defaults(), "jeton-de-test-0123456789abcdef", 8733, opts)
+	t.Setenv("BARATIE_CONFIG", tmp)
+	return New("dev", config.Defaults(), "jeton-de-test-0123456789abcdef", 8733, opts)
 }
 
 func do(s *Server, method, host, path string, h map[string]string) *httptest.ResponseRecorder {
@@ -29,7 +27,7 @@ func do(s *Server, method, host, path string, h map[string]string) *httptest.Res
 	return w
 }
 
-// Sur ce PC : seuls 127.0.0.1, localhost et [::1] au bon port (rebond DNS).
+// En local : seuls 127.0.0.1, localhost et [::1] au bon port (rebond DNS).
 func TestLocalHosts(t *testing.T) {
 	s := testServer(t, Options{})
 	for host, want := range map[string]int{
@@ -48,19 +46,19 @@ func TestLocalHosts(t *testing.T) {
 
 // Mode serveur : tout nom d'hôte, mais le jeton reste exigé.
 func TestServerMode(t *testing.T) {
-	s := testServer(t, Options{Remote: true, Managed: "docker"})
+	s := testServer(t, Options{Remote: true})
 	if got := do(s, "GET", "nas.local:8733", "/health", nil).Code; got != http.StatusOK {
 		t.Fatalf("hôte du réseau refusé : %d", got)
 	}
 	// Sans cookie : refusé, et la page sait qu'elle est en mode serveur pour
-	// dire où trouver le lien d'accès (sultar, 22/10/26).
+	// dire où trouver le lien d'accès.
 	if w := do(s, "GET", "nas.local:8733", "/ui/state", nil); w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), `"remote":true`) {
 		t.Fatalf("page sans cookie : %d %s", w.Code, w.Body.String())
 	}
 	if got := do(s, "GET", "nas.local:8733", "/auth?t=faux", nil).Code; got != http.StatusForbidden {
 		t.Fatalf("mauvais jeton : %d", got)
 	}
-	w := do(s, "GET", "d3x.exemple.net", "/auth?t=jeton-de-test-0123456789abcdef", map[string]string{"X-Forwarded-Proto": "https"})
+	w := do(s, "GET", "baratie.exemple.net", "/auth?t=jeton-de-test-0123456789abcdef", map[string]string{"X-Forwarded-Proto": "https"})
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("bon jeton : %d", w.Code)
 	}
@@ -69,17 +67,17 @@ func TestServerMode(t *testing.T) {
 		t.Fatalf("cookie : %+v", c)
 	}
 	cookie := map[string]string{"Cookie": c[0].Name + "=" + c[0].Value}
-	w = do(s, "GET", "d3x.exemple.net", "/ui/state", cookie)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"mode":"docker"`) {
+	w = do(s, "GET", "baratie.exemple.net", "/ui/state", cookie)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"mode":"server"`) {
 		t.Fatalf("état : %d %s", w.Code, w.Body.String())
 	}
 	// Derrière un proxy https : l'origine https du même hôte est acceptée,
 	// une autre origine non.
 	post := func(origin string) int {
 		h := map[string]string{"Cookie": cookie["Cookie"], "Content-Type": "application/json", "Origin": origin}
-		return do(s, "POST", "d3x.exemple.net", "/ui/stop", h).Code
+		return do(s, "POST", "baratie.exemple.net", "/ui/reconnect", h).Code
 	}
-	if got := post("https://d3x.exemple.net"); got == http.StatusForbidden {
+	if got := post("https://baratie.exemple.net"); got == http.StatusForbidden {
 		t.Fatalf("origine https refusée")
 	}
 	if got := post("https://evil.test"); got != http.StatusForbidden {

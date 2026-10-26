@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"baratie/internal/torrent"
 )
 
 // rTorrent, par XML-RPC (souvent « https://seedbox/RPC2 », derrière une
@@ -278,7 +278,7 @@ func (r *rtorrent) List(ctx context.Context, hashes []string) ([]Torrent, error)
 		}
 		res, err := r.call(ctx, "system.multicall", calls)
 		if err != nil {
-			break // les trackers ne servent qu'à reconnaître V3X : on s'en passe
+			break // les trackers ne servent qu'à reconnaître le tracker : on s'en passe
 		}
 		list, _ := res.([]interface{})
 		for j, item := range list {
@@ -365,14 +365,14 @@ func (r *rtorrent) Recheck(ctx context.Context, h string) error { return r.one(c
 func (r *rtorrent) Start(ctx context.Context, h string) error   { return r.one(ctx, "d.start", h) }
 func (r *rtorrent) Stop(ctx context.Context, h string) error    { return r.one(ctx, "d.stop", h) }
 
-// RemoveKeepFiles : avec rTorrent, D3X arrête et ferme le torrent mais ne le
+// RemoveKeepFiles : avec rTorrent, Baratie arrête et ferme le torrent mais ne le
 // retire pas. Un réglage de rTorrent (événement « erased ») peut effacer les
 // données au retrait, et ces données sont celles de ta copie : à retirer
 // toi-même dans ruTorrent, en gardant les fichiers.
 func (r *rtorrent) RemoveKeepFiles(ctx context.Context, h string) error {
 	_ = r.one(ctx, "d.stop", h)
 	_ = r.one(ctx, "d.close", h)
-	return errors.New("torrent arrêté : retire-le toi-même dans ruTorrent en gardant les fichiers (rTorrent peut être réglé pour effacer les données au retrait, D3X ne prend pas ce risque)")
+	return errors.New("torrent arrêté : retire-le toi-même dans ruTorrent en gardant les fichiers (rTorrent peut être réglé pour effacer les données au retrait, Baratie ne prend pas ce risque)")
 }
 
 // rtQuote : une valeur entre guillemets pour une commande de rTorrent

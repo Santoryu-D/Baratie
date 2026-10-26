@@ -1,7 +1,7 @@
 // Package qbit parle à qBittorrent par son interface web (API v2, qBittorrent
 // 4.5 ou plus pour l'export des .torrent).
 //
-// D3X ne touche jamais aux fichiers : il demande à qBittorrent de vérifier les
+// Baratie ne touche jamais aux fichiers : il demande à qBittorrent de vérifier les
 // données, et ne démarre un torrent que s'il est complet à 100 %.
 package qbit
 
@@ -155,7 +155,7 @@ func (c *Client) login(ctx context.Context) error {
 	if resp.StatusCode == http.StatusForbidden && strings.Contains(strings.ToLower(text), "banned") {
 		return errors.New("qBittorrent a bloqué cette adresse après trop d'échecs de connexion : attends quelques minutes, puis vérifie le mot de passe")
 	}
-	// Identification du serveur (seedbox) refusée : D3X y a déjà présenté le
+	// Identification du serveur (seedbox) refusée : Baratie y a déjà présenté le
 	// pseudo et le mot de passe des champs (basicAuth).
 	if resp.StatusCode == http.StatusUnauthorized {
 		return errors.New("l'adresse demande d'abord une identification du serveur (la fenêtre « identifiez-vous » d'une seedbox) et refuse le pseudo et le mot de passe saisis : mets ceux que ton hébergeur t'a donnés dans les champs de ce client")

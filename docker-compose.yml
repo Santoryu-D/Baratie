@@ -1,19 +1,32 @@
-# D3X sur un NAS ou un serveur. Lien d'accès : docker compose logs d3x
+# Baratie : exemple de docker-compose. Adapte les chemins à ta machine.
+# Le lien d'accès (avec son jeton) s'affiche dans : docker logs baratie
+#
+# Baratie n'est pas fait pour être exposé sur Internet : garde le port sur
+# ton réseau local (ou derrière un VPN).
 services:
-  d3x:
-    image: ghcr.io/v3x0rv3x/d3x:latest
-    container_name: d3x
+  baratie:
+    build: .
+    image: baratie:latest
+    container_name: baratie
     restart: unless-stopped
-    # Laisse finir une publication en cours du lot à l'arrêt (docker stop).
-    stop_grace_period: 1m
+    # Mêmes UID:GID que le propriétaire de tes fichiers (commande « id »).
+    # Exemple Unraid : 99:100 (nobody:users).
+    user: "1000:1000"
     ports:
-      - "8733:8733"
+      - "8769:8769"
+    environment:
+      # Dossier de seed : chaque release publiée y est recréée en liens
+      # physiques, au nom exact de la fiche ; le client torrent seede depuis
+      # là. Doit être sur le MÊME disque/volume que tes films.
+      - BARATIE_SEED_DIR=/data/torrents/baratie
+      # Dossier proposé dans le Garde-manger pour choisir les bibliothèques.
+      - BARATIE_MEDIA=/data
+      - TZ=Europe/Paris
     volumes:
-      - d3x:/config
-      # Tes releases, en lecture seule : D3X ne modifie jamais tes fichiers.
-      - /chemin/vers/tes/medias:/data:ro
-    # Utilisateur qui peut lire tes médias (id -u, id -g sur le NAS).
-    # user: "1000:1000"
-
-volumes:
-  d3x:
+      - ./config:/config
+      # Monte tes médias au MÊME chemin que dans ton client torrent (ici
+      # /data des deux côtés) : sinon, règle une correspondance de chemins
+      # dans les Réglages. Écriture nécessaire uniquement pour créer les
+      # liens physiques du dossier de seed : Baratie ne modifie, ne renomme
+      # et ne supprime jamais un fichier existant.
+      - /chemin/vers/tes/medias:/data

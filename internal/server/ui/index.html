@@ -3,202 +3,59 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>D3X</title>
+<title>Baratie</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <script src="theme.js"></script>
 <link rel="stylesheet" href="app.css">
-<link rel="stylesheet" href="/ui/bbcode.css" id="bbcode-css">
 <script src="vendor/mediainfo/mediainfo.min.js" defer></script>
 <script src="app.js" defer></script>
 <script src="publish.js" defer></script>
-<script src="music.js" defer></script>
-<script src="batch.js" defer></script>
-<script src="seed.js" defer></script>
-<script src="library.js" defer></script>
+<script src="trk.js" defer></script>
+<script src="pantry.js" defer></script>
 </head>
 <body>
 <aside class="rail" aria-label="Navigation">
-  <div class="rail-logo" title="D3X, l'outil de V3X"><span class="wordmark">V3<span class="x">X</span></span><span class="rail-sub">D3X</span></div>
+  <div class="rail-logo" title="Baratie"><span class="wordmark baratie">Bara<span class="x">tie</span></span><span class="rail-sub">UNIT3D</span></div>
   <nav class="rail-nav" aria-label="Vues">
-    <button class="view rail-item" data-view="cross" aria-current="page" title="Cross-seed"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg></span><span class="rail-label">Cross-seed</span></button>
-    <button class="view rail-item" data-view="seed" title="Mon seed"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></span><span class="rail-label">Mon seed</span></button>
-    <button class="view rail-item" data-view="library" title="Médiathèque"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16"/><path d="M17 4v16"/><path d="M3 9h4"/><path d="M3 15h4"/><path d="M17 9h4"/><path d="M17 15h4"/></svg></span><span class="rail-label">Médiathèque</span></button>
-    <button class="view rail-item" data-view="publish" title="Publier"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg></span><span class="rail-label">Publier</span></button>
-    <button class="view rail-item" data-view="batch" title="Lot"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></span><span class="rail-label">Lot</span></button>
+    <button class="view rail-item" data-view="publish" aria-current="page" title="Publier"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg></span><span class="rail-label">Publier</span></button>
+    <button class="view rail-item" data-view="pantry" title="Garde-manger"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 10h16"/><path d="M9 6.5h6"/><path d="M9 14h2"/><path d="M13 14h2"/><path d="M9 17h6"/></svg></span><span class="rail-label">Garde-manger</span></button>
     <button class="view rail-item" data-view="history" title="Historique"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg></span><span class="rail-label">Historique</span></button>
   </nav>
   <div class="rail-foot">
     <button class="rail-item" data-open-settings title="Réglages"><span class="rail-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="rail-label">Réglages</span></button>
     <span class="ver" id="ver"></span>
-    <button class="ver-check" id="ver-check" type="button" title="Chercher une nouvelle version de D3X">Vérifier</button>
   </div>
 </aside>
 
 <header class="topbar">
-  <button class="chip" id="chip-v3x" data-open-settings><span class="dot"></span><span class="txt">V3X</span></button>
+  <button class="chip" id="chip-trk" data-open-settings><span class="dot"></span><span class="txt">Tracker</span></button>
   <span class="chips" id="chips-clients"></span>
-  <button class="chip hidden" id="chip-ssh" data-open-settings><span class="dot"></span><span class="txt">Seedbox</span></button>
 </header>
 
-<div class="notice hidden" id="update"></div>
-<div class="notice bad hidden" id="session">La session a expiré. Relance D3X pour rouvrir sa page.</div>
+<div class="notice bad hidden" id="session">La session a expiré : rouvre Baratie avec son lien d'accès.</div>
 
 <main>
-  <section id="view-cross" class="view-pane">
+  <section id="view-publish" class="view-pane">
     <div class="onboard hidden" id="onboard">
-      <h1>Bienvenue sur D3X</h1>
-      <p>Deux réglages et c'est parti : D3X retrouve sur V3X les releases que ton client torrent seede déjà ailleurs, et les y ajoute sur les mêmes fichiers.</p>
+      <h1>Bienvenue sur Baratie</h1>
+      <p>Trois réglages et c'est parti : Baratie prépare la fiche de tes releases pour ton tracker UNIT3D, la publie sur ton clic et la met en seed dans ton client torrent.</p>
       <ol>
-        <li><b>Ta clé API V3X</b> : <a href="https://v3x.club/settings?tab=integrations" target="_blank" rel="noopener">Réglages ▸ Intégrations</a>, crée une clé avec les droits « Torznab » (cross-seed) et « Upload » (publier).</li>
-        <li><b>Ton client torrent</b> : qBittorrent, Transmission, Deluge ou rTorrent, sur ce PC, un NAS ou une seedbox (plusieurs à la fois si tu veux). Active son interface web ; D3X sait le trouver sur ce PC.</li>
+        <li><b>Ton tracker</b> : son adresse et ton token API (sur le site : ton profil ▸ Paramètres ▸ API).</li>
+        <li><b>Ta clé TMDB</b>, gratuite sur themoviedb.org, pour retrouver chaque film.</li>
+        <li><b>Ton client torrent</b> : qBittorrent, Transmission, Deluge ou rTorrent, avec son interface web.</li>
       </ol>
       <button class="btn primary" data-open-settings>Ouvrir les réglages</button>
     </div>
-
-    <div class="head" id="cross-head">
-      <div>
-        <h1>Cross-seed</h1>
-        <p class="lede">Ce que tu seedes déjà ailleurs et qui existe sur V3X à l'identique, mêmes noms et mêmes tailles. Les releases les moins seedées sur V3X passent en premier : ce sont elles qui ont le plus besoin de toi.</p>
-        <p class="watch-line hidden" id="watch-line"><span class="dot" aria-hidden="true"></span><span id="watch-txt"></span> <button type="button" class="linkish" data-open-settings>Régler</button></p>
-      </div>
-      <div class="head-actions">
-        <button class="btn primary" id="scan">Analyser mon client</button>
-        <button class="btn hidden" id="stop">Arrêter</button>
-      </div>
-    </div>
-
-    <div class="progress hidden" id="progress">
-      <div class="progress-txt"><span id="progress-label"></span><span id="progress-detail" class="muted"></span></div>
-      <div class="track"><div class="fill" id="progress-fill"></div></div>
-    </div>
-    <div class="notice bad hidden" id="scan-error"></div>
-    <div class="notice warn hidden" id="scan-warn"></div>
-
-    <div class="tabs hidden" id="tabs" role="tablist"></div>
-    <div class="list-filter hidden" id="list-filter">
-      <input type="text" id="f-text" spellcheck="false" autocomplete="off" aria-label="Filtrer la liste" placeholder="Filtrer : 1080p MULTi -720p (un « - » devant un mot l'écarte)">
-      <span class="small muted" id="f-text-n"></span>
-    </div>
-    <label class="check small hidden" id="none-filter"><input type="checkbox" id="f-hide-forbidden"> Masquer les releases des teams qui interdisent le réupload</label>
-    <p class="small muted hidden" id="ign-line"><span id="ign-text"></span> <button type="button" class="linkish" id="ign-toggle"></button></p>
-
-    <div class="table-wrap hidden" id="table-wrap">
-      <table class="rows">
-        <thead>
-          <tr>
-            <th class="c-check"><input type="checkbox" id="check-all" aria-label="Tout cocher"></th>
-            <th>Release</th>
-            <th class="num">Taille</th>
-            <th class="num" title="Sources et clients sur V3X">Sur V3X</th>
-            <th>État</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-      <p class="empty hidden" id="empty"></p>
-    </div>
-    <p class="more hidden" id="more"></p>
-  </section>
-
-  <section id="view-seed" class="view-pane hidden">
-    <div class="head">
-      <div>
-        <h1>Mon seed</h1>
-        <p class="lede">Ce que V3X attend de ton seed, comparé à ce que fait vraiment ton client. D3X te prévient avant un hit and run, et repère les releases rares que tu peux reprendre contre des jetons.</p>
-      </div>
-      <button class="btn" id="seed-refresh">Actualiser</button>
-    </div>
-    <div class="notice warn hidden" id="seed-warn"></div>
-    <div class="seed-summary" id="seed-summary"></div>
-
-    <div class="card">
-      <div class="card-head"><h2>À seeder encore</h2><span class="sub" id="seed-hnr-sub"></span></div>
-      <div class="table-wrap">
-        <table class="rows">
-          <thead><tr><th>Release</th><th>Seed fait</th><th>Avant le</th><th id="seed-col-client">Dans ton client</th><th></th></tr></thead>
-          <tbody id="seed-tbody"></tbody>
-        </table>
-      </div>
-      <p class="empty hidden" id="seed-empty"></p>
-    </div>
-
-    <div class="card hidden" id="seed-relay-card">
-      <div class="card-head"><h2>Relais à reprendre</h2><span class="sub">releases rares lâchées par un membre : prime au repreneur après 24 h de seed</span></div>
-      <ul class="seed-list" id="seed-relay-list"></ul>
-    </div>
-
-    <div class="card hidden" id="seed-stopped-card">
-      <div class="card-head"><h2>Releases V3X arrêtées</h2><button class="btn small primary" id="seed-start-all">Tout démarrer</button></div>
-      <p class="hint" id="seed-stopped-txt"></p>
-      <details class="seed-more"><summary>Voir la liste</summary><ul class="seed-names" id="seed-stopped-list"></ul></details>
-    </div>
-  </section>
-
-  <section id="view-library" class="view-pane hidden">
-    <div class="head">
-      <div>
-        <h1>Médiathèque</h1>
-        <p class="lede">Tes films et séries rangés par ta médiathèque, renommés et sans leur .torrent, retrouvés sur V3X. Seules les tailles des gros fichiers partent vers V3X, jamais un nom ni un chemin. Chaque release est vérifiée sur ton disque, fichier par fichier et morceau par morceau, avant de t'être proposée.</p>
-      </div>
-      <div class="head-actions">
-        <button class="btn primary" id="lib-scan" disabled>Analyser ma médiathèque</button>
-        <button class="btn hidden" id="lib-stop">Arrêter</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><h2>Dossiers de ta médiathèque</h2></div>
-      <ul class="lib-folders hidden" id="lib-folders"></ul>
-      <div class="src-row hidden" id="lib-src-row"><span class="muted small">Fichiers sur</span><div class="src-switch" id="lib-src" role="radiogroup" aria-label="Où sont les fichiers"></div></div>
-      <div class="fs-bar">
-        <input type="text" id="lib-path" spellcheck="false" autocomplete="off" aria-label="Dossier de la médiathèque" placeholder="Dossier de tes films ou de tes séries">
-        <button class="btn small" id="lib-browse">Parcourir</button>
-        <button class="btn small primary" id="lib-add">Ajouter</button>
-      </div>
-      <ul class="fs-list hidden" id="lib-fs"></ul>
-      <div class="src-row hidden" id="lib-client-row"><label for="lib-client" class="muted small">Ajouter à</label><select id="lib-client" aria-label="Client qui reçoit les ajouts de la médiathèque"></select></div>
-      <p class="notice" id="lib-how"></p>
-    </div>
-
-    <div class="progress hidden" id="lib-progress">
-      <div class="progress-txt"><span id="lib-progress-label"></span><span id="lib-progress-detail" class="muted"></span></div>
-      <div class="track"><div class="fill" id="lib-progress-fill"></div></div>
-    </div>
-    <div class="notice bad hidden" id="lib-error"></div>
-    <div class="notice warn hidden" id="lib-warn"></div>
-
-    <div class="tabs hidden" id="lib-tabs" role="tablist"></div>
-    <div class="table-wrap hidden" id="lib-wrap">
-      <table class="rows">
-        <thead>
-          <tr>
-            <th class="c-check"><input type="checkbox" id="lib-all" aria-label="Tout cocher"></th>
-            <th>Release</th>
-            <th class="num">Taille</th>
-            <th class="num" title="Sources et clients sur V3X">Sur V3X</th>
-            <th>État</th>
-          </tr>
-        </thead>
-        <tbody id="lib-tbody"></tbody>
-      </table>
-      <p class="empty hidden" id="lib-empty"></p>
-    </div>
-  </section>
-
-  <section id="view-publish" class="view-pane hidden">
     <div class="head">
       <div>
         <h1>Publier</h1>
-        <p class="lede">Choisis un dossier ou un fichier, sur ce PC ou sur ta seedbox : D3X fabrique le .torrent là où sont les fichiers pendant que tu remplis la fiche, que V3X prépare comme sur sa page d'upload. Une fois publiée, la release part en seed dans ton client, sur les mêmes fichiers.</p>
+        <p class="lede">Choisis un film : Baratie fabrique le .torrent là où sont les fichiers pendant que tu vérifies la fiche, qu'il prépare d'après le nom, le MediaInfo et TMDB. Rien ne part sans ton clic. Une fois publiée, la release part en seed dans ton client, sur les mêmes fichiers.</p>
       </div>
     </div>
     <div class="notice bad hidden" id="pub-scope"></div>
 
     <div class="card" id="pub-pick">
-      <div class="card-head">
-        <h2>1. La release</h2>
-        <div class="src-switch hidden" id="pub-src" role="radiogroup" aria-label="Où sont les fichiers"></div>
-      </div>
+      <div class="card-head"><h2>1. La release</h2></div>
       <div class="fs-bar">
         <button class="btn small" id="fs-up">Remonter</button>
         <input type="text" id="fs-path" spellcheck="false" autocomplete="off" aria-label="Chemin du dossier" placeholder="Chemin d'un dossier">
@@ -229,243 +86,137 @@
       </div>
     </div>
 
-    <div class="card hidden" id="pub-form">
-      <div class="card-head"><h2>2. La fiche</h2><span class="sub" id="fiche-state"></span></div>
+    <div class="card hidden" id="trk-form">
+      <div class="card-head"><h2>2. La fiche <span id="trk-name">du tracker</span></h2><span class="sub" id="trk-state"></span></div>
+      <div class="notice bad hidden" id="trk-error"></div>
+      <div class="notice bad hidden" id="trk-blockers"></div>
+      <div class="notice warn hidden" id="trk-warnings"></div>
       <div class="grid2">
-        <div class="field span2" id="tmdb-field">
-          <label for="tmdb-q">Œuvre (TMDB)</label>
+        <div class="field span2">
+          <label for="trk-tmdb-q">Film (TMDB)</label>
           <div class="row">
-            <input type="text" id="tmdb-q" autocomplete="off" spellcheck="false" placeholder="Titre ou lien TMDB">
-            <button class="btn small" id="tmdb-go">Chercher</button>
-            <label class="check inline"><input type="checkbox" id="f-notmdb"> Pas de fiche TMDB</label>
+            <input type="text" id="trk-tmdb-q" autocomplete="off" spellcheck="false" placeholder="Titre et année, ou lien TMDB / IMDB">
+            <button class="btn small" type="button" id="trk-tmdb-go">Chercher</button>
           </div>
-          <div class="tmdb-picked hidden" id="tmdb-picked"></div>
-          <ul class="tmdb-results" id="tmdb-results"></ul>
+          <div class="tmdb-picked hidden" id="trk-tmdb-picked"></div>
+          <ul class="tmdb-results" id="trk-tmdb-results"></ul>
         </div>
-        <div class="field span2 hidden" id="mb-field">
-          <label for="mb-q">Album (MusicBrainz)</label>
-          <div class="mb-local" id="mb-local"></div>
-          <div class="row">
-            <input type="text" id="mb-q" autocomplete="off" spellcheck="false" placeholder="Artiste - Album, ou lien MusicBrainz de l'édition">
-            <button class="btn small" id="mb-go">Chercher</button>
-            <label class="check inline"><input type="checkbox" id="f-nomb"> Pas de fiche MusicBrainz</label>
-          </div>
-          <div class="tmdb-picked hidden" id="mb-picked"></div>
-          <p class="hint" id="mb-state" aria-live="polite"></p>
-          <ul class="mb-results" id="mb-results"></ul>
-          <div class="hidden" id="dg-box">
-            <button class="btn small" type="button" id="dg-go" title="Chercher une pochette sur Discogs, hébergée ensuite sur V3X">Pochette Discogs</button>
-            <ul class="mb-results" id="dg-results"></ul>
-          </div>
-        </div>
-        <div class="field span2 hidden" id="game-field">
-          <label for="game-q">Jeu</label>
-          <div class="row">
-            <input type="text" id="game-q" autocomplete="off" spellcheck="false" placeholder="Titre du jeu (ex. Baldur's Gate 3)">
-            <button class="btn small" id="game-go">Chercher</button>
-          </div>
-          <div class="tmdb-picked hidden" id="game-picked"></div>
-          <p class="hint" id="game-state" aria-live="polite"></p>
-          <ul class="tmdb-results" id="game-results"></ul>
-        </div>
-        <div class="field span2 hidden" id="book-field">
-          <label for="book-q">Livre</label>
-          <div class="row">
-            <input type="text" id="book-q" autocomplete="off" spellcheck="false" placeholder="Lien Open Library ou ISBN">
-            <button class="btn small" id="book-go">Utiliser</button>
-          </div>
-          <div class="tmdb-picked hidden" id="book-picked"></div>
-          <p class="hint" id="book-state" aria-live="polite">Le lien de l'œuvre ou de l'édition, ou l'ISBN : titre, auteur, couverture et fiche du livre, comme sur le site. Facultatif.</p>
-        </div>
-        <div class="field span2 hidden" id="versions">
-          <label>Déjà sur V3X</label>
-          <div class="notice warn hidden" id="versions-redo"></div>
-          <ul class="versions" id="versions-list"></ul>
-          <p class="hint" id="versions-hint"></p>
-        </div>
-        <div class="field">
-          <label for="f-root">Catégorie</label>
-          <div class="row"><select id="f-root" aria-label="Catégorie"></select><select id="f-leaf" aria-label="Sous-catégorie"></select></div>
-        </div>
-        <div class="field">
-          <label for="f-lang">Langue</label>
-          <select id="f-lang"></select>
+        <div class="field span2 hidden" id="trk-versions">
+          <label>Déjà sur <span class="trk-n">le tracker</span></label>
+          <ul class="versions" id="trk-versions-list"></ul>
+          <p class="hint" id="trk-versions-hint"></p>
         </div>
         <div class="field span2">
-          <label for="f-name">Nom de la release</label>
-          <input type="text" id="f-name" spellcheck="false" autocomplete="off">
-          <p class="hint hidden" id="name-sugg"></p>
-          <div class="tokens" id="name-tokens"></div>
+          <label for="trk-f-name">Titre de la fiche</label>
+          <input type="text" id="trk-f-name" spellcheck="false" autocomplete="off">
+          <p class="hint hidden" id="trk-suggest"></p>
+          <div class="tokens" id="trk-tokens"></div>
+          <p class="hint" id="trk-seedlink"></p>
         </div>
+        <div class="field"><label for="trk-f-cat">Catégorie</label><select id="trk-f-cat"></select></div>
+        <div class="field"><label for="trk-f-type">Type</label><select id="trk-f-type"></select></div>
+        <div class="field"><label for="trk-f-res">Résolution</label><select id="trk-f-res"></select></div>
         <div class="field">
-          <label for="f-title">Titre affiché</label>
-          <input type="text" id="f-title" autocomplete="off">
+          <label>Identifiants</label>
+          <div class="row"><input type="number" id="trk-f-tmdb" min="0" placeholder="TMDB" aria-label="ID TMDB"><input type="number" id="trk-f-imdb" min="0" placeholder="IMDB (sans tt)" aria-label="ID IMDB"></div>
         </div>
-        <div class="field hidden" id="season-field">
-          <label for="f-season">Saison ou épisode</label>
-          <input type="text" id="f-season" autocomplete="off" spellcheck="false" placeholder="S01, S01E03…">
+        <div class="field span2 row wrap">
+          <label class="check inline"><input type="checkbox" id="trk-f-anon"> Upload anonyme</label>
+          <label class="check inline"><input type="checkbox" id="trk-f-stream"> Optimisé pour le stream</label>
+          <label class="check inline"><input type="checkbox" id="trk-f-sd"> Contenu SD</label>
+          <label class="check inline"><input type="checkbox" id="trk-f-personal"> Release perso</label>
+          <label class="check inline hidden" id="trk-nfo-l"><input type="checkbox" id="trk-f-nfo" checked> Joindre le .nfo de la release</label>
         </div>
-        <div class="field span2 opts">
-          <label class="check inline"><input type="checkbox" id="f-anon"> Upload anonyme</label>
-          <label class="check inline"><input type="checkbox" id="f-excl"> Exclusivité V3X</label>
-          <label class="check inline hidden" id="team-opt"><input type="checkbox" id="f-team"> <span id="team-label">Release de ma team</span></label>
+        <div class="field span2">
+          <label for="trk-f-desc">Description (BBCode)</label>
+          <textarea id="trk-f-desc" rows="4" spellcheck="false"></textarea>
+          <p class="hint">Le nom de la release au minimum ; les captures hébergées s'ajoutent en dessous.</p>
         </div>
-        <div class="field span2 hidden" id="vt-field">
-          <label for="f-vt">Rapport VirusTotal</label>
-          <textarea id="f-vt" rows="2" spellcheck="false" autocomplete="off" placeholder="https://www.virustotal.com/gui/file/…"></textarea>
-          <p class="hint">Exigé par V3X pour les applications et les jeux : fais analyser le fichier sur virustotal.com et colle le lien du rapport (six au plus, un par ligne).</p>
-        </div>
-      </div>
-
-      <div class="editor">
-        <div class="editor-head">
-          <label for="f-desc">Présentation</label>
-          <div class="row">
-            <div class="fmt-ed hidden" id="fmt" role="radiogroup" aria-label="Format de la présentation">
-              <button class="tab small" id="fmt-bb" role="radio" aria-checked="true" aria-selected="true">BBCode</button>
-              <button class="tab small" id="fmt-html" role="radio" aria-checked="false" aria-selected="false" title="Présentation écrite en HTML (réservé sur V3X aux uploadeurs confirmés)">HTML</button>
-            </div>
-            <select id="f-tpl" aria-label="Modèle de présentation"></select>
-            <button class="btn small" id="regen" title="Refaire la présentation à partir de la fiche (tes retouches seront perdues)">Régénérer</button>
-            <button class="btn small" id="desc-file" title="Remplacer la présentation par celle d'un fichier : .txt en BBCode, ou .html si V3X t'y autorise">Charger un fichier</button>
-            <input type="file" id="desc-file-in" accept=".txt,.bbcode,.html,.htm,text/plain,text/html" hidden>
-            <div class="tabs-ed" role="tablist">
-              <button class="tab small" id="ed-tab-edit" role="tab" aria-selected="true">Éditer</button>
-              <button class="tab small" id="ed-tab-prev" role="tab" aria-selected="false">Aperçu</button>
-            </div>
+        <div class="field span2" id="trk-shots-field">
+          <label>Captures d'écran</label>
+          <div class="row wrap">
+            <button class="btn small" type="button" id="trk-shots-go">Générer 4 captures</button>
+            <button class="btn small primary hidden" type="button" id="trk-shots-host">Héberger sur imgbb et ajouter à la description</button>
+            <span class="sub" id="trk-shots-state"></span>
           </div>
+          <div class="trk-shots-info hidden" id="trk-shots-info"></div>
+          <div class="trk-shots" id="trk-shots"></div>
+          <p class="hint">PNG aux proportions réelles (1920 px de large au plus), sans sous-titres, HDR converti en SDR, prises entre 15 et 75 % du film. Elles restent sur ta machine tant que tu ne cliques pas sur « Héberger » (imgbb, avec ta clé ; chaque image est vérifiée à travers le relais d'images d'UNIT3D).</p>
         </div>
-        <div class="toolbar" id="toolbar" role="toolbar" aria-label="Mise en forme"></div>
-        <div class="ed-panes" id="ed-panes">
-          <textarea id="f-desc" spellcheck="true" aria-label="Présentation (BBCode)"></textarea>
-          <div class="preview prose-v3x" id="preview" aria-live="polite"></div>
-        </div>
+        <details class="field span2">
+          <summary>MediaInfo envoyé</summary>
+          <textarea id="trk-f-mi" rows="10" spellcheck="false"></textarea>
+        </details>
+        <details class="field span2" id="trk-why-box">
+          <summary>Pourquoi ces choix</summary>
+          <ul class="hint" id="trk-why"></ul>
+        </details>
       </div>
-
-      <details class="nfo">
-        <summary>NFO et MediaInfo</summary>
-        <label class="check small"><input type="checkbox" id="f-keepnfo"> Reprendre le .nfo de la release, avec le MediaInfo à la suite s'il n'en a pas (aussi dans le Lot)</label>
-        <textarea id="f-nfo" spellcheck="false" aria-label="NFO"></textarea>
-      </details>
-      <div class="notice bad hidden" id="pub-error"></div>
     </div>
-
-    <div class="card hidden" id="pub-done"></div>
+    <div class="card hidden" id="trk-done"></div>
   </section>
 
-  <section id="view-batch" class="view-pane hidden">
+  <section id="view-pantry" class="view-pane hidden">
     <div class="head">
       <div>
-        <h1>Lot</h1>
-        <p class="lede">Un dossier entier passé au crible : chaque sous-dossier ou fichier est une release. D3X ne publie seul que ce qui est sûr (œuvre trouvée avec certitude, MediaInfo présent, aucun avertissement, aucun doublon, rien d'exécutable). Le reste part « à vérifier », avec la raison, et s'ouvre dans Publier d'un clic. Le lot tourne dans D3X, pas dans cette page : sur un serveur (Docker), ou avec mediainfo installé, tu peux la fermer et revenir voir où il en est ; sinon garde-la ouverte, c'est elle qui calcule le MediaInfo.</p>
+        <h1>Garde-manger</h1>
+        <p class="lede">Tes films, comparés à ce que <span class="trk-n">le tracker</span> a déjà. Baratie lit seulement tes bibliothèques (rien n'est modifié), identifie chaque film sur TMDB, puis cherche sur <span class="trk-n">le tracker</span> en douceur, en tâche de fond. Rien n'est publié d'ici : « Préparer la fiche » l'ouvre dans Publier.</p>
+      </div>
+      <div class="head-actions">
+        <button class="btn" type="button" id="pm-pause">Mettre en pause</button>
+        <button class="btn primary" type="button" id="pm-scan">Scanner ma médiathèque</button>
       </div>
     </div>
-
-    <div class="card">
-      <div class="src-row hidden" id="b-src-row"><span class="muted small">Fichiers sur</span><div class="src-switch" id="b-src" role="radiogroup" aria-label="Où sont les fichiers"></div></div>
-      <div class="fs-bar">
-        <input type="text" id="b-path" spellcheck="false" autocomplete="off" aria-label="Dossier à passer au crible" placeholder="Dossier qui contient les releases">
-        <button class="btn small" id="b-browse">Parcourir</button>
-        <button class="btn small primary" id="b-list">Lister</button>
+    <div class="pm-libs">
+      <div class="pm-libs-head">
+        <span><b>Bibliothèques scannées :</b> <span id="pm-libs-sum">…</span></span>
+        <button class="btn small" type="button" id="pm-libs-edit">Choisir les dossiers</button>
       </div>
-      <ul class="fs-list hidden" id="b-fs"></ul>
-      <p class="hint hidden" id="b-from"></p>
-      <div class="opts b-opts">
-        <label class="check inline"><input type="checkbox" id="b-sim" checked> Simulation (rien n'est publié)</label>
-        <label class="check inline"><input type="checkbox" id="b-video" checked> Vidéos et albums seulement</label>
-        <label class="check inline" title="« Artiste - Album [FLAC] » devient « Artiste - Album [FLAC 24bit-96kHz] » : la qualité que V3X exige dans le nom, lue dans les fichiers"><input type="checkbox" id="b-fixname"> Compléter le nom des albums avec leur qualité</label>
-        <label class="check inline" title="Disque lent : chaque release publiée est vérifiée par ton client avant que le lot passe à la suivante, au lieu d'empiler les vérifications"><input type="checkbox" id="b-waitcheck"> Attendre la vérification du client avant la release suivante</label>
-        <label class="check inline" title="Disque lent : les releases publiées restent à l'arrêt dans ton client pendant que le lot hache les suivantes, puis démarrent toutes seules à la fin du lot, même arrêté en route"><input type="checkbox" id="b-seedlater"> Démarrer le seed à la fin du lot</label>
-        <label class="inline-field">Plafond <input type="number" id="b-cap" min="0" value="300"> Gio</label>
-        <label class="inline-field">Au plus <input type="number" id="b-max" min="0" value="0"> publications (0 = sans limite)</label>
-        <label class="inline-field" title="Le lot s'arrête de publier une fois ce volume atteint : une release qui le dépasserait attend le lot suivant">Au plus <input type="number" id="b-maxgib" min="0" value="0"> Gio publiés (0 = sans limite)</label>
+      <div class="hidden" id="pm-libs-box">
+        <p class="hint">Coche les dossiers à scanner (sous-dossiers compris). Les films déjà traités restent en mémoire.</p>
+        <div class="pm-libs-list" id="pm-libs-list"></div>
+        <div class="row">
+          <input type="text" id="pm-libs-other" spellcheck="false" autocomplete="off" placeholder="Autre dossier : /data/…">
+          <button class="btn small" type="button" id="pm-libs-add">Ajouter</button>
+        </div>
+        <div class="row">
+          <button class="btn small" type="button" id="pm-libs-cancel">Annuler</button>
+          <button class="btn small primary" type="button" id="pm-libs-save">Enregistrer</button>
+        </div>
       </div>
     </div>
-
-    <div class="progress hidden" id="b-progress">
-      <div class="progress-txt"><span id="b-progress-label"></span><span id="b-progress-detail" class="muted"></span></div>
-      <div class="track"><div class="fill" id="b-progress-fill"></div></div>
+    <div class="notice hidden" id="pm-status"></div>
+    <div class="pm-chips" id="pm-chips" role="tablist" aria-label="Classes"></div>
+    <div class="pm-tools">
+      <input type="search" id="pm-q" placeholder="Filtrer par titre" autocomplete="off" spellcheck="false">
+      <select id="pm-lib" aria-label="Bibliothèque"><option value="">Toutes les bibliothèques</option></select>
     </div>
-
-    <div class="tabs hidden" id="b-tabs" role="tablist"></div>
-    <p class="hint hidden" id="b-reset-line"><button type="button" class="btn small" id="b-reset"></button> Les décisions du lot sont oubliées pour ces releases : rien n'est publié ni effacé.</p>
-    <div class="table-wrap hidden" id="b-wrap">
-      <table class="rows">
-        <thead>
-          <tr>
-            <th class="c-check"><input type="checkbox" id="b-all" aria-label="Tout cocher"></th>
-            <th>Release</th>
-            <th class="num">Taille</th>
-            <th>État</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="b-tbody"></tbody>
-      </table>
-      <p class="empty hidden" id="b-empty"></p>
-    </div>
+    <ul class="pm-list" id="pm-list"></ul>
+    <button class="btn hidden" type="button" id="pm-more">Afficher plus</button>
   </section>
 
   <section id="view-history" class="view-pane hidden">
-    <div class="head"><div><h1>Historique</h1><p class="lede">Ce que D3X a ajouté, ou laissé à l'arrêt, sur cette machine.</p></div></div>
+    <div class="head"><div><h1>Historique</h1><p class="lede">Ce que Baratie a publié et mis en seed depuis cette machine.</p></div></div>
     <ul class="history" id="history"></ul>
   </section>
 </main>
 
-<div class="actionbar hidden" id="actionbar">
-  <div class="sel"><b id="sel-count">0</b> <span id="sel-label">release cochée</span> · <span id="sel-size">0 octet</span></div>
-  <p class="how">Ajoutées à l'arrêt, vérifiées par ton client, démarrées seulement si elles sont complètes.</p>
-  <button class="btn primary" id="apply">Ajouter à mon client</button>
-</div>
-
-<div class="actionbar hidden" id="lib-bar">
-  <div class="sel" id="lib-sel"></div>
-  <p class="how">Ajoutées à l'arrêt, vérifiées par ton client, démarrées seulement si elles sont complètes.</p>
-  <button class="btn primary" id="lib-apply">Ajouter à mon client</button>
-</div>
-
-<div class="actionbar hidden" id="pick-bar">
-  <div class="sel"><b id="pick-count">0</b> <span id="pick-label">release choisie</span> · <span id="pick-size">0 octet</span></div>
-  <p class="how">Le Lot les passe au crible, en simulation d'abord : il ne publie seul que ce qui est sûr.</p>
-  <button class="btn" id="pick-publish">Publier</button>
-  <button class="btn primary" id="pick-lot">Passer au crible du Lot</button>
-</div>
-
 <div class="actionbar hidden" id="pub-bar">
   <div class="sel" id="pub-bar-txt"></div>
-  <p class="how">La fiche part sur V3X, puis la release est ajoutée à ton client, vérifiée et mise en seed.</p>
-  <button class="btn hidden" id="pub-keep" title="Garde cette fiche : le Lot publiera la release avec elle, telle quelle">Garder pour le lot</button>
-  <button class="btn primary" id="pub-go">Publier sur V3X</button>
+  <p class="how"></p>
+  <button class="btn" id="trk-sim" type="button" title="Montre exactement ce qui partirait, sans rien envoyer">Simuler</button>
+  <button class="btn primary" id="pub-go">Publier</button>
 </div>
 
-<div class="actionbar hidden" id="b-bar">
-  <div class="sel" id="b-bar-txt"></div>
-  <p class="how" id="b-bar-how"></p>
-  <button class="btn hidden" id="b-uncheck" title="Décoche les releases de tous les onglets">Tout décocher</button>
-  <button class="btn" id="b-stop">Arrêter</button>
-  <button class="btn primary" id="b-run">Lancer le lot</button>
-</div>
-
-<dialog id="pub-confirm" aria-labelledby="pub-confirm-title">
+<dialog id="trk-dialog" aria-labelledby="trk-dialog-title">
   <form method="dialog" class="confirm">
-    <h2 id="pub-confirm-title">Publier cette release ?</h2>
-    <dl id="pub-confirm-list"></dl>
-    <label class="check"><input type="checkbox" id="f-rights"> Je déclare avoir le droit de partager ce contenu, conformément aux règles de V3X.</label>
+    <h2 id="trk-dialog-title"></h2>
+    <p class="hint" id="trk-dialog-hint"></p>
+    <dl class="trk-form" id="trk-dialog-list"></dl>
     <div class="dialog-actions">
-      <button type="button" class="btn" id="pub-confirm-no">Revenir à la fiche</button>
-      <button type="button" class="btn primary" id="pub-confirm-yes" disabled>Publier</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="diag" aria-labelledby="diag-title">
-  <form method="dialog" class="confirm">
-    <h2 id="diag-title">Diagnostic de la release</h2>
-    <p class="hint">À coller dans ton message au staff, sur le forum ou par « Contacter le staff ». Ni info-hash ni chemin sur ton disque : rien ne dit d'où vient ta copie.</p>
-    <textarea id="diag-text" readonly rows="12" spellcheck="false"></textarea>
-    <div class="dialog-actions">
-      <button type="button" class="btn" id="diag-close">Fermer</button>
-      <button type="button" class="btn primary" id="diag-copy">Copier</button>
+      <button type="button" class="btn" id="trk-dialog-no">Revenir à la fiche</button>
+      <button type="button" class="btn hidden" id="trk-dialog-yes">Publier</button>
+      <button type="button" class="btn primary hidden" id="trk-dialog-host">Héberger les captures</button>
     </div>
   </form>
 </dialog>
@@ -474,107 +225,58 @@
   <form id="settings-form" method="dialog">
     <h2 id="settings-title">Réglages</h2>
     <fieldset>
-      <legend>V3X</legend>
-      <label for="f-key">Clé API</label>
-      <input id="f-key" type="password" autocomplete="off" spellcheck="false" placeholder="Colle ta clé ici">
-      <p class="hint" id="key-hint">Réglages ▸ Intégrations sur V3X : droit « Torznab » pour le cross-seed, et « Upload » pour publier. Elle reste sur cette machine.</p>
-      <p class="status" id="v3x-status"></p>
+      <legend>Tracker UNIT3D</legend>
+      <label for="f-trk-url">Adresse du tracker</label>
+      <input id="f-trk-url" type="text" autocomplete="off" spellcheck="false" placeholder="https://mon-tracker.exemple">
+      <label for="f-trk-key">Token API</label>
+      <input id="f-trk-key" type="password" autocomplete="off" spellcheck="false" placeholder="Colle ton token ici">
+      <p class="hint">Sur le site : ton profil ▸ Paramètres ▸ API. Il reste sur cette machine et ne part qu'en en-tête vers le tracker.</p>
+      <p class="status" id="trk-status"></p>
+      <p class="hint" id="rules-hint"></p>
+    </fieldset>
+    <fieldset>
+      <legend>Fiche</legend>
+      <label for="f-tmdb">Clé API TMDB</label>
+      <input id="f-tmdb" type="password" autocomplete="off" spellcheck="false" placeholder="Colle ta clé ici">
+      <p class="hint">Gratuite sur themoviedb.org ▸ Paramètres ▸ API (clé « v3 » ou jeton de lecture « v4 »). Sert à retrouver le film et son ID IMDB.</p>
+      <label for="f-imgbb">Clé API imgbb (captures d'écran)</label>
+      <input id="f-imgbb" type="password" autocomplete="off" spellcheck="false" placeholder="Colle ta clé ici">
+      <p class="hint">Gratuite : connecté à imgbb.com, va sur api.imgbb.com ▸ « Get API key ». UNIT3D fait passer les images par un relais que certains hébergeurs refusent ; imgbb, lui, s'affiche.</p>
     </fieldset>
     <fieldset id="clients-set">
       <legend id="clients-legend">Client torrent</legend>
       <div class="clients" id="clients"></div>
       <div class="row-actions clients-actions">
-        <button type="button" class="btn small" id="detect">Détecter sur ce PC</button>
+        <button type="button" class="btn small" id="detect">Détecter sur cette machine</button>
         <button type="button" class="btn small" id="client-add">Ajouter un autre client</button>
       </div>
       <ul class="detected hidden" id="detected"></ul>
-      <p class="hint" id="clients-hint">Une seedbox et ce PC, par exemple : D3X les interroge tous, et ajoute chaque cross-seed au client qui a déjà les fichiers (le premier de la liste s'ils sont dans plusieurs).</p>
+      <p class="hint" id="clients-hint"></p>
     </fieldset>
     <fieldset>
-      <legend>Liens</legend>
-      <label class="check"><input id="l-on" type="checkbox"> Quand renommer dans le client est impossible, ranger la release V3X dans un dossier de liens</label>
-      <div id="l-dirs"></div>
-      <div class="notice warn hidden" id="l-warn"></div>
-      <p class="hint">Chaque fichier de la release V3X y devient un lien physique vers le fichier de ta copie : aucune place en plus, ta copie n'est pas touchée, rien n'est écrasé. Le dossier doit exister, sur le même disque que tes fichiers, et D3X doit le voir (sur cette machine, avec les dossiers du client au-dessus, ou par ta seedbox). Utile surtout avec rTorrent, qui ne sait pas renommer.</p>
-      <label class="check"><input id="l-sym" type="checkbox"> Liens symboliques plutôt que physiques</label>
-      <p class="hint">Pour une copie qu'on ne peut pas lier physiquement : partage réseau en lecture seule (NFS, SMB), autre disque. Le lien vise le fichier tel que ton client le voit (avec les dossiers du client au-dessus) ; le dossier des liens peut alors être n'importe où, tant que ton client peut y écrire. Ne déplace pas ta copie ensuite : le lien pointerait dans le vide. Sous Windows, il faut le mode développeur.</p>
-    </fieldset>
-    <fieldset id="ssh-set">
-      <legend>Seedbox (SSH)</legend>
-      <p class="hint">Pour publier ce qui est sur ta seedbox sans rien rapatrier : D3X y dépose son petit agent (dans <code>~/.d3x</code>), qui lit et hache les fichiers sur place. Seul le .torrent revient. Le client torrent de la seedbox doit être dans tes clients, au-dessus.</p>
-      <div class="hidden" id="s-saved-row">
-        <label for="s-saved">Seedboxes enregistrées</label>
-        <select id="s-saved" aria-label="Choisir une seedbox enregistrée"></select>
-      </div>
-      <div class="two port">
-        <div><label for="s-host">Adresse</label><input id="s-host" type="text" autocomplete="off" spellcheck="false" placeholder="ma-seedbox.exemple.net"></div>
-        <div><label for="s-port">Port</label><input id="s-port" type="number" min="1" max="65535" placeholder="22"></div>
-      </div>
-      <div class="two">
-        <div><label for="s-user">Utilisateur</label><input id="s-user" type="text" autocomplete="off" spellcheck="false"></div>
-        <div><label for="s-secret">Mot de passe</label><input id="s-secret" type="password" autocomplete="off" placeholder="ou phrase de passe de ta clé"></div>
-      </div>
-      <label for="s-key">Clé SSH (facultatif)</label>
-      <input id="s-key" type="text" autocomplete="off" spellcheck="false" placeholder="vide = id_ed25519, id_ecdsa ou id_rsa de ton dossier .ssh">
-      <p class="hint">Le mot de passe n'est jamais enregistré : D3X le redemande à chaque lancement. Avec une clé sans phrase de passe, la seedbox se reconnecte seule.</p>
-      <div class="hostkey hidden" id="s-hostkey" role="alert">
-        <p id="s-hostkey-txt"></p>
-        <code class="fp" id="s-hostkey-fp"></code>
-        <div class="row-actions">
-          <button type="button" class="btn small" id="s-reject">Ne pas accepter</button>
-          <button type="button" class="btn small primary" id="s-accept">C'est bien ma seedbox</button>
-        </div>
-      </div>
-      <div class="row-actions">
-        <button type="button" class="btn small hidden" id="s-forget">Oublier cette seedbox</button>
-        <button type="button" class="btn small primary" id="s-connect">Se connecter</button>
-      </div>
-      <p class="status" id="ssh-status"></p>
-    </fieldset>
-    <fieldset id="watch-set">
-      <legend>Surveillance</legend>
-      <div class="watch-on">
-        <label class="check inline"><input id="w-on" type="checkbox"> Surveiller mon client</label>
-        <select id="w-min" aria-label="Intervalle entre deux analyses">
-          <option value="15">toutes les 15 min</option>
-          <option value="30">toutes les 30 min</option>
-          <option value="60">toutes les heures</option>
-          <option value="180">toutes les 3 heures</option>
-        </select>
-      </div>
-      <p class="hint" id="w-hint"></p>
-      <label class="check" id="w-notify-row"><input id="w-notify" type="checkbox"> Me prévenir : nouvelles releases à cross-seeder, hit and run en vue</label>
-      <label class="check"><input id="w-auto" type="checkbox"> Ajouter seul les nouvelles releases identiques (mêmes fichiers, mêmes noms ; jamais les « noms différents »)</label>
-      <label class="check" id="w-start-row"><input id="w-start" type="checkbox"> Lancer D3X avec Windows, dans la zone de notification</label>
-    </fieldset>
-    <fieldset>
-      <legend>Apparence</legend>
-      <label for="f-theme">Fond</label>
-      <select id="f-theme">
-        <option value="">Comme sur V3X</option>
-        <option value="dark">Sombre</option>
-        <option value="light">Jour</option>
-        <option value="blue">Bleu nuit</option>
-      </select>
-      <label>Couleur d'accent</label>
-      <div class="swatches" id="f-accent" role="radiogroup" aria-label="Couleur d'accent"></div>
-      <p class="hint">Par défaut, D3X reprend le fond et la couleur choisis sur ton profil V3X.</p>
-    </fieldset>
-    <fieldset>
-      <legend>Ajouts</legend>
+      <legend>Torrents ajoutés</legend>
       <div class="two">
         <div><label for="f-cat">Catégorie</label><input id="f-cat" type="text" autocomplete="off" placeholder="aucune"></div>
         <div><label for="f-tag">Étiquette</label><input id="f-tag" type="text" autocomplete="off"></div>
       </div>
-      <p class="hint">Posées sur chaque torrent ajouté par D3X, pour les retrouver dans ton client. Dans la catégorie, <code>{cat}</code> reprend celle de ta copie d'origine dans qBittorrent : <code>{cat}.cross</code> range un cross-seed de « tv » dans « tv.cross ».</p>
-      <label for="f-pubcat">Catégorie de tes publications</label>
-      <input id="f-pubcat" type="text" autocomplete="off" placeholder="la même">
-      <p class="hint">Pour ranger à part ce que tu publies avec Publier et le Lot. Vide : la catégorie ci-dessus.</p>
-      <label for="f-discogs">Jeton Discogs (facultatif)</label>
-      <input id="f-discogs" type="password" autocomplete="off" spellcheck="false">
-      <label class="check small hidden" id="f-discogs-clear-l"><input id="f-discogs-clear" type="checkbox"> Retirer le jeton Discogs</label>
-      <p class="hint">Pour chercher la pochette d'un album sur Discogs quand MusicBrainz n'en a pas (Publier ▸ Album ▸ « Pochette Discogs »). Le jeton se crée sur discogs.com ▸ Paramètres ▸ Développeurs ; il reste sur cette machine.</p>
-      <label class="check"><input id="f-updates" type="checkbox"> Prévenir quand une nouvelle version de D3X sort</label>
+      <p class="hint">Posées sur chaque release publiée, pour la retrouver dans ton client.</p>
+      <p class="hint" id="seeddir-hint"></p>
+    </fieldset>
+    <fieldset>
+      <legend>Garde-manger</legend>
+      <div class="grid2">
+        <div class="field"><label for="f-pm-radarr">Radarr (facultatif)</label><input id="f-pm-radarr" type="text" spellcheck="false" autocomplete="off" placeholder="http://radarr:7878"></div>
+        <div class="field"><label for="f-pm-radarr-key">Clé API Radarr</label><input id="f-pm-radarr-key" type="password" spellcheck="false" autocomplete="off" placeholder="Colle ta clé ici"></div>
+      </div>
+      <p class="hint">Radarr (Paramètres ▸ Général ▸ Clé API) donne l'ID TMDB exact des films qu'il gère, en lecture seule. Les autres sont identifiés par leur nom.</p>
+      <label for="f-pm-rate">Recherches sur le tracker par minute</label>
+      <input id="f-pm-rate" type="number" min="1" max="30" step="1">
+      <p class="hint">UNIT3D autorise en général 30 requêtes par minute ; 20 laisse de la place à tes uploads.</p>
+    </fieldset>
+    <fieldset>
+      <legend>Apparence</legend>
+      <label for="f-theme">Thème</label>
+      <select id="f-theme"><option value="light">Clair</option><option value="dark">Sombre</option></select>
     </fieldset>
     <div class="dialog-actions">
       <button type="button" class="btn" id="settings-cancel">Fermer</button>

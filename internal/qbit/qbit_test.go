@@ -80,9 +80,9 @@ func TestRefererWithoutCredentials(t *testing.T) {
 }
 
 func TestTrackerHosts(t *testing.T) {
-	tor := Torrent{MagnetURI: "magnet:?xt=urn:btih:abc&tr=https%3A%2F%2Fannounce.v3x.club%2Fpk%2Fannounce&tr=udp%3A%2F%2Fautre.invalid%3A80"}
+	tor := Torrent{MagnetURI: "magnet:?xt=urn:btih:abc&tr=https%3A%2F%2Fannounce.tracker.invalid%2Fpk%2Fannounce&tr=udp%3A%2F%2Fautre.invalid%3A80"}
 	h := tor.TrackerHosts()
-	if len(h) != 2 || h[0] != "announce.v3x.club" || h[1] != "autre.invalid" {
+	if len(h) != 2 || h[0] != "announce.tracker.invalid" || h[1] != "autre.invalid" {
 		t.Errorf("hôtes : %v", h)
 	}
 }

@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/V3x0rV3x/D3X/internal/qbit"
-	"github.com/V3x0rV3x/D3X/internal/torrent"
+	"baratie/internal/qbit"
+	"baratie/internal/torrent"
 )
 
 type qbitClient struct{ c *qbit.Client }
@@ -37,7 +37,6 @@ func (q *qbitClient) List(ctx context.Context, hashes []string) ([]Torrent, erro
 			Hash: strings.ToLower(t.Hash), Hashes: t.Hashes(), Name: t.Name, ContentPath: t.ContentPath,
 			Size: t.Size, TotalSize: t.TotalSize, Progress: t.Progress,
 			Checking: t.Checking(), Downloading: t.Downloading(), Stopped: t.Stopped(), Trackers: t.TrackerHosts(),
-			Category: t.Category,
 		})
 	}
 	return out, nil

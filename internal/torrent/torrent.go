@@ -1,6 +1,6 @@
-// Package torrent lit un .torrent et calcule les mêmes empreintes que V3X
+// Package torrent lit un .torrent et calcule les mêmes empreintes que le tracker
 // (apps/api/src/lib/torrent-parse.ts côté site) : c'est ce qui permet de savoir,
-// sans rien envoyer d'autre, si une release de ton client existe déjà sur V3X.
+// sans rien envoyer d'autre, si une release de ton client existe déjà sur le tracker.
 package torrent
 
 import (
@@ -15,7 +15,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/V3x0rV3x/D3X/internal/bencode"
+	"baratie/internal/bencode"
 )
 
 // File est un fichier du torrent, chemin complet avec le dossier racine.
