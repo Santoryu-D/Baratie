@@ -162,7 +162,7 @@ func (e *Engine) addOne(ctx context.Context, r *Row) (string, string) {
 	if exists, supported, err := tg.Client.Lookup(ctx, r.contentPath); err == nil && supported && !exists {
 		return StMissing, missingDetail
 	}
-	if hash, err := e.AddAndVerify(ctx, *tg, env.Cfg, r.Key, m.ID, raw, save); err != nil {
+	if hash, err := e.AddAndVerify(ctx, *tg, WithCategory(env.Cfg, r.category), r.Key, m.ID, raw, save); err != nil {
 		switch {
 		case errors.Is(err, ErrInClient):
 			return StInClient, ""
@@ -572,6 +572,39 @@ func (e *Engine) WatchOf(hash string) (WatchState, bool) {
 	}
 	st, ok := e.final[hash]
 	return st, ok
+}
+
+// CategoryFor applique le modèle de catégorie des ajouts (idée de JohnnyJohn28,
+// 26/10/26) : « {cat} » y est remplacé par la catégorie de la copie d'origine
+// dans le client, pour ranger un cross-seed à côté d'elle (« {cat}.cross » :
+// tv → tv.cross, movies → movies.cross). Une copie déjà rangée selon le modèle
+// le garde telle quelle (pas de movies.cross.cross) ; sans catégorie d'origine
+// (médiathèque, autre client), il reste le texte autour : « cross ».
+func CategoryFor(tpl, src string) string {
+	i := strings.Index(tpl, "{cat}")
+	if i < 0 {
+		return tpl
+	}
+	pre, suf := tpl[:i], strings.ReplaceAll(tpl[i+len("{cat}"):], "{cat}", "")
+	src = strings.TrimSpace(src)
+	if src == "" {
+		return strings.Trim(pre+suf, " ./-_")
+	}
+	if (pre != "" || suf != "") && strings.HasPrefix(src, pre) && strings.HasSuffix(src, suf) && len(src) > len(pre)+len(suf) {
+		return src
+	}
+	return pre + src + suf
+}
+
+// WithCategory : la configuration, catégorie du modèle résolue pour la copie
+// d'origine src. Inchangée sans « {cat} ».
+func WithCategory(cfg *config.Config, src string) *config.Config {
+	if cfg == nil || !strings.Contains(cfg.Category, "{cat}") {
+		return cfg
+	}
+	c := *cfg
+	c.Category = CategoryFor(cfg.Category, src)
+	return &c
 }
 
 // AddAndVerify ajoute un .torrent à l'arrêt sur des données existantes, au

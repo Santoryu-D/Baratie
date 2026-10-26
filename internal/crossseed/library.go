@@ -735,7 +735,7 @@ func (e *Engine) addLibrary(ctx context.Context, r *LibRow) (string, string) {
 		if err := link(ctx, tg.PathMap, dir, lp, false); err != nil {
 			return again, "liens : " + err.Error()
 		}
-		hash, err := e.AddAndVerify(ctx, *tg, cfg, r.Key, r.Match.ID, r.raw, dir)
+		hash, err := e.AddAndVerify(ctx, *tg, WithCategory(cfg, ""), r.Key, r.Match.ID, r.raw, dir)
 		if err != nil {
 			if hash == "" || errors.Is(err, ErrInClient) {
 				_ = link(context.Background(), tg.PathMap, dir, lp, true)

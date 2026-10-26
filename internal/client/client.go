@@ -30,6 +30,9 @@ type Torrent struct {
 	Downloading bool    // cherche à recevoir des données
 	Stopped     bool    // arrêté (ne seede pas)
 	Trackers    []string
+	// Category : la catégorie du torrent dans le client (qBittorrent ; vide
+	// ailleurs). Sert au modèle {cat} de la catégorie des cross-seeds.
+	Category string
 }
 
 // AddOptions règle un ajout (toujours à l'arrêt).

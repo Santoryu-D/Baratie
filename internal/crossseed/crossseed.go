@@ -129,6 +129,7 @@ type Row struct {
 
 	hash        string // info-hash de la copie dans son client
 	contentPath string
+	category    string // catégorie de la copie dans son client (modèle {cat})
 	sig         *Sig
 }
 
@@ -382,7 +383,7 @@ func (e *Engine) runScan(ctx context.Context) error {
 		g := groups[k]
 		rep := g.copies[0]
 		hash := strings.ToLower(rep.Hash)
-		r := &Row{Key: hash + "@" + g.t.ID, hash: hash, Name: rep.Name, Size: rep.TotalSize, Copies: len(g.copies), contentPath: rep.ContentPath, Path: rep.ContentPath, Client: g.t.ID, ClientName: g.t.Name}
+		r := &Row{Key: hash + "@" + g.t.ID, hash: hash, Name: rep.Name, Size: rep.TotalSize, Copies: len(g.copies), contentPath: rep.ContentPath, category: rep.Category, Path: rep.ContentPath, Client: g.t.ID, ClientName: g.t.Name}
 		rows[r.Key] = r
 		rowOf[k] = r
 		if g.onV3X {

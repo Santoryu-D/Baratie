@@ -401,7 +401,7 @@ func (e *Engine) addLinked(ctx context.Context, tg Target, cfg *config.Config, r
 	if err := link(ctx, tg.PathMap, dir, lp, false); err != nil {
 		return StRenamed, "liens : " + err.Error()
 	}
-	hash, err := e.AddAndVerify(ctx, tg, cfg, r.Key, r.Match.ID, raw, dir)
+	hash, err := e.AddAndVerify(ctx, tg, WithCategory(cfg, r.category), r.Key, r.Match.ID, raw, dir)
 	if err != nil {
 		if hash == "" || errors.Is(err, ErrInClient) {
 			_ = link(context.Background(), tg.PathMap, dir, lp, true)

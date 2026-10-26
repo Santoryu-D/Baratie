@@ -609,9 +609,11 @@ func private(src source.Source, where string) error {
 // elle est réglée (demande d'Ekhstaz), sinon dans celle des cross-seeds.
 func pubConfig(cfg *config.Config) *config.Config {
 	if cfg == nil || strings.TrimSpace(cfg.PubCategory) == "" {
-		return cfg
+		// Modèle {cat} des cross-seeds : une publication n'a pas de copie
+		// d'origine rangée, il reste le texte autour.
+		return crossseed.WithCategory(cfg, "")
 	}
 	c := *cfg
 	c.Category = strings.TrimSpace(cfg.PubCategory)
-	return &c
+	return crossseed.WithCategory(&c, "")
 }
