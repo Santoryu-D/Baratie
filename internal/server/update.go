@@ -33,7 +33,7 @@ func (s *Server) SetUpdateKey(pub ed25519.PublicKey) {
 
 // pageSilence : une fenêtre réduite ne ralentit ses signaux qu'à un par
 // minute. lotSilence : pendant un lot, une fenêtre que le navigateur a
-// endormie (écran éteint) reprend son lot au retour ; D3X l'attend.
+// endormie (écran éteint) se réveille plus tard ; D3X l'attend.
 const (
 	pageSilence = 3 * time.Minute
 	lotSilence  = 12 * time.Hour
@@ -41,10 +41,12 @@ const (
 
 // PageGone dit si la page a été fermée : elle a dit au revoir sans revenir
 // depuis 8 s (un rechargement revient tout de suite), ou elle ne donne plus
-// signe de vie depuis 3 min. Pendant un lot, seul l'au revoir de la page du
-// lot compte, ou 12 h de silence (karat, 24/10/26 : écran éteint, PC jamais
-// en veille, D3X s'arrêtait pendant la sieste). Faux tant que la page n'est
-// jamais venue.
+// signe de vie depuis 3 min. Faux tant que la page n'est jamais venue.
+// Pendant un lot (qui tourne, s'arrête ou attend le MediaInfo d'une page),
+// le silence seul ne compte qu'au bout de 12 h (karat, 24/10/26 : écran
+// éteint, le navigateur endort la fenêtre) ; l'au revoir, lui, compte
+// toujours : sans binaire mediainfo, le lot ne peut plus avancer sans page,
+// et D3X s'arrête comme avant.
 func (s *Server) PageGone() bool {
 	gone, _ := s.pageGone()
 	return gone
@@ -61,38 +63,34 @@ func (s *Server) pageGone() (bool, string) {
 	if last == 0 {
 		return false, ""
 	}
-	lot := s.LotRunning()
 	now := time.Now().UnixNano()
-	if bye > 0 && bye >= last && now-bye > int64(8*time.Second) && !lot {
+	if bye > 0 && bye >= last && now-bye > int64(8*time.Second) {
 		return true, "la page a dit au revoir"
 	}
 	silence := pageSilence
-	if lot {
+	if s.lotRunning() {
 		silence = lotSilence
 	}
 	quiet := time.Duration(now - last)
 	return quiet > silence, "page muette depuis " + quiet.Round(time.Second).String()
 }
 
-// LotAdvancing : un lot tourne et sa page parle encore (moins de 10 min de
-// silence) ; une page endormie n'avance plus son lot.
-func (s *Server) LotAdvancing() bool {
-	return s.LotRunning() && time.Now().UnixNano()-s.lastSeen.Load() < int64(10*time.Minute)
+// lotRunning : un lot tourne, s'arrête ou attend le MediaInfo d'une page.
+func (s *Server) lotRunning() bool {
+	if s.lotRunningFn != nil {
+		return s.lotRunningFn()
+	}
+	return s.lot != nil && s.lot.Running()
 }
 
-// LotRunning : une page a dit, à son dernier signal, qu'un lot tournait (il y
-// a moins de 12 h).
-func (s *Server) LotRunning() bool {
-	s.pagesMu.Lock()
-	defer s.pagesMu.Unlock()
-	now := time.Now().UnixNano()
-	for _, at := range s.lotPages {
-		if now-at < int64(lotSilence) {
-			return true
-		}
-	}
-	return false
+// LotAdvancing : un lot tourne et avance (pas en attente d'une page pour le
+// MediaInfo). Windows ne met pas le PC en veille pendant ce temps.
+func (s *Server) LotAdvancing() bool {
+	return s.lot.Running() && s.miPage.Pending() == nil
 }
+
+// StopLot arrête le lot proprement (icône « Quitter », docker stop).
+func (s *Server) StopLot() { s.lot.Stop() }
 
 // Resumed : l'ordinateur sort de veille. La page s'est tue pendant la veille
 // sans être fermée : elle a de nouveau 3 min pour se manifester. Chez karat
@@ -122,7 +120,6 @@ func (s *Server) ping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shown := r.URL.Query().Get("shown") == "1"
-	lotOn := r.URL.Query().Get("lot") == "1"
 	s.pagesMu.Lock()
 	if s.pages == nil {
 		s.pages = map[string]bool{}
@@ -130,14 +127,6 @@ func (s *Server) ping(w http.ResponseWriter, r *http.Request) {
 	before, known := s.pages[id]
 	if len(s.pages) < 64 || known {
 		s.pages[id] = before || shown
-	}
-	if s.lotPages == nil {
-		s.lotPages = map[string]int64{}
-	}
-	if _, running := s.lotPages[id]; lotOn && (len(s.lotPages) < 64 || running) {
-		s.lotPages[id] = time.Now().UnixNano()
-	} else if !lotOn {
-		delete(s.lotPages, id)
 	}
 	other := false
 	for k, v := range s.pages {
@@ -197,9 +186,10 @@ func (s *Server) PageClosed() bool {
 	return bye > 0 && bye >= last && time.Now().UnixNano()-bye > int64(8*time.Second)
 }
 
-// Busy dit si D3X travaille (ajouts, vérifications, publications) : pas de
-// redémarrage ni d'arrêt à ce moment-là.
-func (s *Server) Busy() bool { return s.engine.Busy() || s.pub.Busy() }
+// Busy dit si D3X travaille (ajouts, vérifications, publications, lot qui
+// avance) : pas de redémarrage ni d'arrêt à ce moment-là. Un lot en attente
+// d'une page pour le MediaInfo n'occupe pas D3X.
+func (s *Server) Busy() bool { return s.engine.Busy() || s.pub.Busy() || s.LotAdvancing() }
 
 // updateEvery : une version sortie dans la soirée n'était vue que six heures
 // plus tard (retour de V3x0r, 20/10/26).

@@ -86,31 +86,39 @@ function nfoWithMediaInfo(nfo, mi) {
 
 // Une série choisie à la main sur TMDB pour une saison sert aux autres saisons
 // de la même série, dans Publier et dans le Lot (quebecman, 23/10/26 : choisir
-// Power une fois, pas à chaque saison). Gardé sur l'appareil.
+// Power une fois, pas à chaque saison). Gardée par D3X (series.json) : le lot,
+// qui tourne dans D3X, la voit aussi. La page y verse une fois ce qu'elle
+// gardait dans le navigateur.
 const SERIES_PICKS = "d3x-series-tmdb";
+let seriesCache = {};
 
 function seriesKeyOf(title) {
-  return String(title || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "");
+  return String(title || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
 }
 
-function seriesPicks() {
-  try { return JSON.parse(localStorage.getItem(SERIES_PICKS) || "{}") || {}; } catch (e) { return {}; }
+async function loadSeries() {
+  let old = null;
+  try { old = JSON.parse(localStorage.getItem(SERIES_PICKS) || "null"); } catch (e) { old = null; }
+  if (old && Object.keys(old).length) {
+    try {
+      await api("/ui/series", { entries: old });
+      localStorage.removeItem(SERIES_PICKS);
+    } catch (e) { /* on réessaiera au prochain chargement */ }
+  }
+  try { seriesCache = { ...((await api("/ui/series")) || {}), ...seriesCache }; } catch (e) { /* cache vide */ }
 }
 
 function rememberSeries(title, it) {
   const k = seriesKeyOf(title);
   if (!it || it.type !== "tv" || k.length < 2) return;
-  const m = seriesPicks();
-  delete m[k];
-  m[k] = { type: "tv", id: it.id, title: it.title, year: it.year, posterUrl: it.posterUrl || null };
-  const keys = Object.keys(m);
-  for (const old of keys.slice(0, Math.max(0, keys.length - 300))) delete m[old];
-  try { localStorage.setItem(SERIES_PICKS, JSON.stringify(m)); } catch (e) { /* rien */ }
+  const w = { type: "tv", id: it.id, title: it.title, year: it.year, posterUrl: it.posterUrl || null };
+  seriesCache[k] = w;
+  api("/ui/series", { entries: { [k]: w } }).catch(() => { /* rien */ });
 }
 
 function rememberedSeries(title) {
   const k = seriesKeyOf(title);
-  return k.length >= 2 ? seriesPicks()[k] || null : null;
+  return k.length >= 2 ? seriesCache[k] || null : null;
 }
 
 // Titre de série d'une fiche V3X (le titre lu dans le nom de la release).
@@ -651,21 +659,27 @@ async function saveMap() {
 let miFactory = null;
 
 // MediaInfo du plus gros fichier vidéo d'une tâche, lu par morceaux via D3X.
-// Sert aussi au mode lot. Renvoie "" s'il n'y a pas de vidéo.
+// Renvoie "" s'il n'y a pas de vidéo.
 async function mediaInfoOf(j) {
   if (j.mainFile < 0) return "";
+  return window.mediaInfoRead(j.id, j.mainFile, j.files[j.mainFile].size);
+}
+
+// MediaInfo d'un fichier d'une tâche, lu par morceaux via D3X. Sert à Publier
+// et au lot (qui tourne dans D3X) : sans binaire mediainfo côté D3X, c'est la
+// page ouverte qui le calcule et le lui rend.
+window.mediaInfoRead = async (jobId, index, size) => {
   if (!miFactory) {
     miFactory = await window.MediaInfo.mediaInfoFactory({ format: "text", locateFile: () => "/vendor/mediainfo/MediaInfoModule.wasm" });
   }
-  const file = j.files[j.mainFile];
-  const read = async (size, offset) => {
-    const r = await fetch("/ui/pub/" + j.id + "/file/" + j.mainFile + "?offset=" + offset + "&size=" + size);
+  const read = async (n, offset) => {
+    const r = await fetch("/ui/pub/" + jobId + "/file/" + index + "?offset=" + offset + "&size=" + n);
     if (!r.ok) throw new Error("lecture " + r.status);
     return new Uint8Array(await r.arrayBuffer());
   };
-  const text = await miFactory.analyzeData(() => file.size, read);
+  const text = await miFactory.analyzeData(() => size, read);
   return String(text || "").trim();
-}
+};
 
 async function runMediaInfo() {
   const j = pub.job;
@@ -1614,3 +1628,7 @@ function bindPublish() {
 }
 
 bindPublish();
+
+// Les séries mémorisées, dès le chargement (publish.js est chargé après app.js :
+// l'appel ne peut pas être dans boot(), qui tourne avant que loadSeries existe).
+loadSeries();

@@ -4,6 +4,8 @@ services:
     image: ghcr.io/v3x0rv3x/d3x:latest
     container_name: d3x
     restart: unless-stopped
+    # Laisse finir une publication en cours du lot à l'arrêt (docker stop).
+    stop_grace_period: 1m
     ports:
       - "8733:8733"
     volumes:
